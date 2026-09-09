@@ -1,0 +1,15 @@
+# Build
+build/
+
+# Compilacion
+*.o
+*.obj
+*.a
+*.so
+*.dll
+*.exe
+*.pdb
+
+# Editor / SO
+.DS_Store
+Thumbs.db

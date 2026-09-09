@@ -1,0 +1,11 @@
+# Archivos generados por Unity (no versionar)
+Library/
+Temp/
+Obj/
+Build/
+Logs/
+UserSettings/
+.vs/
+*.csproj
+*.sln
+*.user

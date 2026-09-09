@@ -1,0 +1,14 @@
+# Registro de juegos del menu
+#
+# Formato (campos separados por TAB):
+#   id<TAB>nombre<TAB>descripcion<TAB>ejecutable_linux<TAB>ejecutable_windows
+#
+# - Las rutas son relativas a la raiz del repositorio.
+# - Los ejecutables de los juegos SDL2 se generan en build/bin/ al compilar.
+# - Para juegos Unity: copia el ejecutable compilado a build/bin/ y registralo aqui.
+# - Las lineas que empiezan por # son comentarios.
+#
+# Ejemplo de juego Unity (descomenta cuando exista):
+#   mi_juego_unity	Mi Juego Unity	Descripcion	build/bin/mi_juego_unity	build/bin/mi_juego_unity.exe
+
+template	Juego Plantilla	Plantilla SDL2 para copiar	build/bin/template_game	build/bin/template_game.exe
