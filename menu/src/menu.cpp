@@ -48,7 +48,8 @@ void Menu::render() {
     // Titulo
     renderText("MINI JUEGOS", 40, 28, SDL_Color{255, 255, 255, 255}, 2.2f);
     SDL_SetRenderDrawColor(renderer_, 70, 90, 140, 255);
-    SDL_RenderFillRect(renderer_, &SDL_Rect{40, 92, 880, 3});
+    SDL_Rect titleBar = {40, 92, 880, 3};
+    SDL_RenderFillRect(renderer_, &titleBar);
 
     // Lista de juegos
     int y = 130;
@@ -56,7 +57,8 @@ void Menu::render() {
         const bool sel = (i == static_cast<size_t>(selected_));
         if (sel) {
             SDL_SetRenderDrawColor(renderer_, 55, 80, 150, 255);
-            SDL_RenderFillRect(renderer_, &SDL_Rect{40, y - 10, 880, 58});
+            SDL_Rect highlight = {40, y - 10, 880, 58};
+            SDL_RenderFillRect(renderer_, &highlight);
         }
         renderText(games_[i].name, 60, y,
                    sel ? SDL_Color{255, 255, 255, 255} : SDL_Color{190, 190, 200, 255}, 1.6f);
