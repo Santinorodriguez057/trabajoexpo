@@ -8,6 +8,7 @@
 
 #include "game_launcher.h"
 #include "game_registry.h"
+#include <unordered_map>
 
 // Menu principal: lista los juegos del registro y los lanza.
 class Menu {
@@ -22,7 +23,7 @@ private:
     void openController();
     void closeController();
     void render();
-    void renderText(const std::string& text, int x, int y, SDL_Color color, float scale);
+    void renderText(const std::string& text, int x, int y, SDL_Color color, float scale = 1.0f, bool center = false);
     void handleEvent(const SDL_Event& ev);
     void moveUp();
     void moveDown();
@@ -39,6 +40,12 @@ private:
 
     std::string statusMessage_;
     Uint32 statusUntil_ = 0;
+
+    std::vector<float> hoverValues_;
+    float scrollY_ = 0.0f;
+    bool awaitingStart_ = true;
+
+    std::unordered_map<std::string, SDL_Texture*> textCache_;
 
     GameLauncher launcher_;
 };

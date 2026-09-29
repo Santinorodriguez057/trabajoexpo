@@ -1,0 +1,15 @@
+find_package(SDL2 REQUIRED)
+find_package(SDL2_ttf REQUIRED)
+find_package(SDL2_image REQUIRED)
+find_package(SDL2_mixer REQUIRED)
+
+add_executable(duelo_vaqueros src/main.cpp)
+
+if(TARGET SDL2::SDL2_ttf)
+    target_link_libraries(duelo_vaqueros PRIVATE SDL2::SDL2 SDL2::SDL2_ttf SDL2_image::SDL2_image SDL2_mixer::SDL2_mixer)
+elseif(TARGET SDL2_ttf::SDL2_ttf)
+    target_link_libraries(duelo_vaqueros PRIVATE SDL2::SDL2 SDL2_ttf::SDL2_ttf SDL2_image::SDL2_image SDL2_mixer::SDL2_mixer)
+else()
+    target_link_libraries(duelo_vaqueros PRIVATE SDL2::SDL2 ${SDL2_TTF_LIBRARIES} ${SDL2_IMAGE_LIBRARIES} ${SDL2_MIXER_LIBRARIES})
+    target_include_directories(duelo_vaqueros PRIVATE ${SDL2_TTF_INCLUDE_DIRS} ${SDL2_IMAGE_INCLUDE_DIRS} ${SDL2_MIXER_INCLUDE_DIRS})
+endif()

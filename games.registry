@@ -12,3 +12,5 @@
 #   mi_juego_unity	Mi Juego Unity	Descripcion	build/bin/mi_juego_unity	build/bin/mi_juego_unity.exe
 
 template	Juego Plantilla	Plantilla SDL2 para copiar	build/bin/template_game	build/bin/template_game.exe
+duelo_vaqueros	Duelo de Vaqueros	Juego de reflejos y giroscopio	build/bin/duelo_vaqueros	build/bin/duelo_vaqueros.exe
+test_mando	Test de Mando	Prueba todos los ejes y sensores de tu mando	build/bin/test_mando	build/bin/test_mando.exe

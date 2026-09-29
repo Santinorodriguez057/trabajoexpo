@@ -24,3 +24,5 @@ add_subdirectory(menu)
 #   add_subdirectory(games/sdl2/mi_juego)
 # ---------------------------------------------------------------------------
 add_subdirectory(games/sdl2/template_game)
+add_subdirectory(games/sdl2/duelo_vaqueros)
+add_subdirectory(games/sdl2/test_mando)

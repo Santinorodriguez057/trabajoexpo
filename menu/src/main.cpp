@@ -18,7 +18,7 @@ static TTF_Font* loadFont() {
         "C:\\Windows\\Fonts\\segoeui.ttf",
     };
     for (const char* path : candidates) {
-        TTF_Font* f = TTF_OpenFont(path, 24);
+        TTF_Font* f = TTF_OpenFont(path, 96);
         if (f) return f;
     }
     return nullptr;
@@ -36,14 +36,16 @@ int main(int argc, char** argv) {
     }
 
     SDL_Window* win = SDL_CreateWindow("Mini Juegos", SDL_WINDOWPOS_CENTERED,
-                                       SDL_WINDOWPOS_CENTERED, 960, 640, 0);
+                                       SDL_WINDOWPOS_CENTERED, 960, 640, SDL_WINDOW_FULLSCREEN_DESKTOP);
     if (!win) {
         std::fprintf(stderr, "No se pudo crear la ventana: %s\n", SDL_GetError());
         TTF_Quit();
         SDL_Quit();
         return 1;
     }
-    SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1"); // Activa Anti-Aliasing (Linear Filtering)
+    
+    SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!ren) {
         std::fprintf(stderr, "No se pudo crear el renderer: %s\n", SDL_GetError());
         SDL_DestroyWindow(win);
@@ -51,6 +53,9 @@ int main(int argc, char** argv) {
         SDL_Quit();
         return 1;
     }
+    
+    // Mantiene la resolucion interna full HD
+    SDL_RenderSetLogicalSize(ren, 1920, 1080);
 
     TTF_Font* font = loadFont();
     if (!font) {
