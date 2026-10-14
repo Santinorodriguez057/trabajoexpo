@@ -7,12 +7,61 @@
 #include <ctime>
 #include <string>
 #include <unordered_map>
+#include <vector>
+#include <algorithm>
+#include <cstdint>
+
+// Generador procedural de SFX (WAV 16-bit mono 44100Hz en memoria)
+static Mix_Chunk* generateToneChunk(int durationMs, int freq, float decay = 5.0f, float volume = 0.5f, int type = 0) {
+    int sampleRate = 44100;
+    int numSamples = (sampleRate * durationMs) / 1000;
+    int16_t* buffer = (int16_t*)std::malloc(numSamples * sizeof(int16_t));
+    if (!buffer) return nullptr;
+
+    for (int i = 0; i < numSamples; ++i) {
+        float t = (float)i / (float)sampleRate;
+        float progress = (float)i / (float)numSamples;
+        float env = std::exp(-progress * decay);
+        float sample = 0.0f;
+
+        if (type == 0) { // Seno puro / Sub-bass punch para latido cardíaco
+            sample = std::sin(2.0f * 3.14159f * (float)freq * t);
+            if (freq < 100) {
+                sample += 0.5f * std::sin(2.0f * 3.14159f * ((float)freq * 0.5f) * t);
+            }
+        } else if (type == 1) { // Ruido / Chasquido mecánico (Tic-Tac / Martillo del revólver)
+            float noise = ((float)(std::rand() % 2000) / 1000.0f) - 1.0f;
+            sample = noise * 0.7f + 0.3f * std::sin(2.0f * 3.14159f * (float)freq * t);
+        } else if (type == 2) { // Campana western lejana (Armónicos ricos)
+            sample = 0.5f * std::sin(2.0f * 3.14159f * (float)freq * t) +
+                     0.3f * std::sin(2.0f * 3.14159f * (float)freq * 2.76f * t) +
+                     0.2f * std::sin(2.0f * 3.14159f * (float)freq * 5.4f * t);
+        } else if (type == 3) { // Silbido del viento
+            float noise = ((float)(std::rand() % 2000) / 1000.0f) - 1.0f;
+            sample = noise * (0.3f + 0.2f * std::sin(t * 3.0f));
+        }
+
+        float finalVal = sample * env * volume * 32760.0f;
+        if (finalVal > 32760.0f) finalVal = 32760.0f;
+        if (finalVal < -32760.0f) finalVal = -32760.0f;
+        buffer[i] = (int16_t)finalVal;
+    }
+
+    Mix_Chunk* chunk = (Mix_Chunk*)std::malloc(sizeof(Mix_Chunk));
+    if (!chunk) { std::free(buffer); return nullptr; }
+    chunk->allocated = 1;
+    chunk->abuf = (Uint8*)buffer;
+    chunk->alen = numSamples * sizeof(int16_t);
+    chunk->volume = (Uint8)(volume * 128);
+    return chunk;
+}
 
 // Estados del juego
 enum GameState {
     STATE_WAITING, 
     STATE_TENSION, 
     STATE_DRAW,    
+    STATE_SHOWDOWN, // Secuencia cinemática (Hit-stop inverso -> Bullet time -> Caída)
     STATE_RESULT   
 };
 
@@ -92,15 +141,34 @@ void renderText(SDL_Renderer* ren, TTF_Font* font, const std::string& text, int 
     SDL_RenderCopy(ren, tex, nullptr, &dst);
 }
 
-void drawCowboy(SDL_Renderer* ren, SDL_Texture* whiteTex, float cx, float cy, int state_phase, bool flip, float t) {
-    const float S = 1.35f; // Escala imponente para que los vaqueros tengan gran presencia
-    float breathe = (state_phase == 2) ? (sin(t * 1.5f) * 1.5f) : (sin(t * 3.5f) * 4.0f);
-    float shake = (state_phase == 1) ? (sin(t * 55.0f) * 3.0f) : 0.0f;
+void drawCowboy(SDL_Renderer* ren, SDL_Texture* whiteTex, float cx, float cy, int state_phase, bool flip, float t, float tension_prog = 0.0f) {
+    const float S = 1.35f; // Escala imponente original
+    
+    // Desfase único por jugador (usando 'flip') para que P1 y P2 no respiren ni parpadeen como robots clonados
+    float phaseOffset = flip ? 2.15f : 0.0f;
+    float tLocal = t + phaseOffset;
+
+    // Respiración dinámica según el estado emocional
+    // En fase 2 (disparo/victoria) se mantiene firme y plantado, sin subir y bajar acelerado
+    float breatheFreq = (state_phase == 1) ? (6.0f + tension_prog * 6.0f) : ((state_phase == 2) ? 0.8f : 3.2f);
+    float breatheAmp  = (state_phase == 1) ? 2.5f : ((state_phase == 2) ? 0.6f : 4.0f);
+    float breathe     = std::sin(tLocal * breatheFreq) * breatheAmp;
+    float chestExpand = (state_phase == 2) ? 0.8f : (std::max(0.0f, std::sin(tLocal * breatheFreq)) * 2.5f);
+
+    // Vibración muscular en tensión
+    float shake = (state_phase == 1) ? (std::sin(t * (55.0f + tension_prog * 35.0f)) * (1.5f + tension_prog * 7.5f)) : 0.0f;
+
+    // Simulación de viento del desierto (costo cero en CPU)
+    float windWave  = std::sin(t * 4.5f + (flip ? 1.0f : 0.0f)) * 6.0f + std::cos(t * 7.2f) * 3.0f;
+    float windGust  = (state_phase == 1) ? (windWave * (1.0f + tension_prog * 0.8f)) : windWave;
+
+    // Parpadeo natural cada ~3.5 segundos (solo en espera o falta)
+    float blinkCycle = std::fmod(tLocal, 3.6f);
+    bool isBlinking  = (state_phase == 0 || state_phase == 4) && (blinkCycle > 3.42f && blinkCycle < 3.56f);
 
     SDL_RendererFlip flipFlag = flip ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE;
-    int dir = flip ? -1 : 1;
 
-    // Helper limpio para dibujar partes con borde negro nítido (3-4px) estilo entintado comic / neo-brutalismo
+    // Helper ultra-rápido (misma arquitectura 1x1 texture batching)
     auto drawR = [&](float lx, float ly, float w, float h, float angle, SDL_Color fill, bool outline = true, int borderW = 3, SDL_Color borderCol = {18, 18, 18, 255}) {
         float sw = w * S;
         float sh = h * S;
@@ -122,55 +190,85 @@ void drawCowboy(SDL_Renderer* ren, SDL_Texture* whiteTex, float cx, float cy, in
         SDL_RenderCopyEx(ren, whiteTex, nullptr, &cR, fa, &center, flipFlag);
     };
 
+    // Paleta Neo-Brutalista enriquecida con acentos cálidos/dramáticos
     SDL_Color cWhite      = {255, 255, 255, 255};
-    SDL_Color cBackLimb   = {220, 220, 222, 255}; // Tono sutil para extremidades traseras (profundidad limpia)
-    SDL_Color cBandana    = {45, 45, 48, 255};     // Pañuelo gris carbón
-    SDL_Color cHatBand    = {35, 35, 38, 255};     // Cinta del sombrero
-    SDL_Color cFaceShadow = {50, 50, 55, 255};     // Sombra bajo el ala del sombrero
+    SDL_Color cBackLimb   = {215, 215, 220, 255};
+    SDL_Color cPoncho     = flip ? SDL_Color{60, 52, 50, 255} : SDL_Color{50, 56, 64, 255}; // Sutil distinción J1 vs J2
+    SDL_Color cPonchoTrim = {210, 180, 95, 255};
+    SDL_Color cBandana    = flip ? SDL_Color{150, 35, 35, 255} : SDL_Color{40, 40, 45, 255}; // J1 Negro carbón, J2 Rojo forajido
+    SDL_Color cHatBand    = {35, 35, 38, 255};
+    SDL_Color cFaceShadow = {42, 42, 48, 255};
     SDL_Color cBlack      = {18, 18, 18, 255};
-    SDL_Color cSilver     = {235, 235, 235, 255};
-    SDL_Color cHolster    = {55, 55, 58, 255};
-    SDL_Color cFlash      = {255, 235, 80, 255};
+    SDL_Color cSilver     = {235, 235, 240, 255};
+    SDL_Color cGold       = {245, 205, 45, 255};
+    SDL_Color cHolster    = {52, 48, 46, 255};
+    SDL_Color cFlash      = {255, 235, 70, 255};
+    SDL_Color cRedGlow    = {255, 50, 50, 255};
+    SDL_Color cSweat      = {120, 210, 255, 255};
 
     // =========================================================================
-    // CASO 1: VAQUERO DERROTADO (Fase 3) - Cae de espaldas en el suelo
+    // CASO 1: VAQUERO DERROTADO (Fase 3) - K.O. Cinematográfico
     // =========================================================================
     if (state_phase == 3) {
-        cWhite = {195, 195, 195, 255};
-        cBackLimb = {165, 165, 165, 255};
+        cWhite = {200, 200, 205, 255};
+        cBackLimb = {165, 165, 170, 255};
+        float koPulse = std::sin(t * 2.0f) * 1.5f; // Leve respiración en el suelo
 
         // Sombra alargada en el suelo
-        drawR(0, 155, 220, 16, 0.0f, cBlack, false);
+        drawR(0, 155, 235, 16, 0.0f, cBlack, false);
 
-        // Piernas estiradas en el piso
-        drawR(45, 140, 85, 26, 0.0f, cWhite, true, 3);
-        // Botas caídas
-        drawR(88, 138, 38, 24, 0.0f, cWhite, true, 3);
-        drawR(90, 148, 40, 5, 0.0f, cBlack, false);
+        // Capa/Poncho desparramado en el piso
+        drawR(-25, 148, 95, 18, -4.0f, cPoncho, true, 2);
 
-        // Torso plano en el suelo
-        drawR(-20, 136, 75, 46, 0.0f, cWhite, true, 3);
-        // Cinturón caído
+        // Piernas estiradas (una ligeramente flexionada por el impacto)
+        drawR(48, 134, 80, 24, -6.0f, cBackLimb, true, 3);
+        drawR(45, 142, 85, 26, 2.0f, cWhite, true, 3);
+        
+        // Botas caídas con espuelas doradas
+        drawR(90, 138, 38, 24, 8.0f, cWhite, true, 3);
+        drawR(92, 148, 40, 5, 8.0f, cBlack, false);
+        drawR(108, 146, 10, 10, t * 40.0f, cGold, true, 1); // Espuela girando lento
+
+        // Torso plano en el suelo con levísimo movimiento
+        drawR(-20, 136 + koPulse * 0.4f, 76, 46, 0.0f, cWhite, true, 3);
+        // Estrella de Sheriff caída en el pecho
+        drawR(-28, 120 + koPulse * 0.4f, 12, 12, 15.0f, cGold, true, 1);
+
+        // Cinturón y hebilla
         drawR(12, 136, 16, 48, 0.0f, cBlack, true, 2);
         drawR(12, 136, 16, 18, 0.0f, cSilver, true, 2);
 
         // Pañuelo
-        drawR(-50, 136, 20, 30, 0.0f, cBandana, true, 2);
+        drawR(-52, 135, 22, 32, 8.0f, cBandana, true, 2);
 
         // Cabeza en el suelo
-        drawR(-78, 134, 46, 44, 0.0f, cWhite, true, 3);
+        drawR(-78, 134, 46, 44, -5.0f, cWhite, true, 3);
         // Ojos de "X" de derrota
-        drawR(-76, 132, 12, 3, 45.0f, cBlack, false);
-        drawR(-76, 132, 12, 3, -45.0f, cBlack, false);
+        drawR(-76, 130, 13, 3, 45.0f, cBlack, false);
+        drawR(-76, 130, 13, 3, -45.0f, cBlack, false);
+        // Lengua afuera cómica / palillo roto
+        drawR(-64, 142, 14, 3, -30.0f, cGold, false);
 
-        // Sombrero volado y tirado a un costado
-        drawR(-120, 142, 135, 12, 22.0f, cWhite, true, 3);
-        drawR(-116, 124, 50, 34, 22.0f, cWhite, true, 3);
-        drawR(-118, 136, 50, 12, 22.0f, cHatBand, true, 2);
+        // Estrellitas de K.O. orbitando sobre la cabeza caída (efecto 3D falso súper ligero)
+        for (int i = 0; i < 3; ++i) {
+            float ang = t * 4.5f + i * 2.094f; // 120 grados de separación
+            float sx = -78.0f + std::cos(ang) * 32.0f;
+            float sy = 96.0f + std::sin(ang) * 9.0f;
+            drawR(sx, sy, 9, 9, t * 180.0f, cGold, true, 1);
+            drawR(sx, sy, 9, 9, t * 180.0f + 45.0f, cGold, false);
+        }
 
-        // Revólver caído en el suelo
-        drawR(110, 146, 38, 14, -15.0f, cWhite, true, 2);
-        drawR(96, 150, 14, 22, 25.0f, cWhite, true, 2);
+        // Sombrero volado a un costado mecido por el viento
+        float hatRock = std::sin(t * 3.0f) * 4.0f;
+        drawR(-124, 142, 135, 12, 20.0f + hatRock, cWhite, true, 3);
+        drawR(-120, 124, 50, 34, 20.0f + hatRock, cWhite, true, 3);
+        drawR(-122, 136, 50, 12, 20.0f + hatRock, cHatBand, true, 2);
+
+        // Revólver caído en el suelo largando un hilito de humo
+        drawR(118, 146, 38, 14, -15.0f, cWhite, true, 2);
+        drawR(104, 150, 14, 22, 25.0f, cWhite, true, 2);
+        float smokeRise = std::fmod(t * 25.0f, 35.0f);
+        drawR(138 + std::sin(t * 5.0f) * 4.0f, 135 - smokeRise, 10 - smokeRise * 0.2f, 10 - smokeRise * 0.2f, t * 45.0f, {200, 200, 200, 255}, false);
         return;
     }
 
@@ -178,248 +276,311 @@ void drawCowboy(SDL_Renderer* ren, SDL_Texture* whiteTex, float cx, float cy, in
     // VAQUERO EN PIE (Fases 0, 1, 2, 4)
     // =========================================================================
     float bodyAngle = 0.0f;
-    float frontArmAngle = 10.0f;
-    float backArmAngle = 5.0f;
     float headTilt = 0.0f;
+    float kneeFlex = 0.0f;
 
-    if (state_phase == 1) { // Tensión (listo para desenfundar)
-        bodyAngle = 6.0f;
-        frontArmAngle = -35.0f; // Mano en la funda
-        backArmAngle = -10.0f;
+    if (state_phase == 0) { // Espera con actitud
+        bodyAngle = std::sin(tLocal * 1.6f) * 1.2f;
+        headTilt = std::sin(tLocal * 1.6f - 0.5f) * 1.5f;
+    } else if (state_phase == 1) { // Tensión (agazapado y listo para matar)
+        bodyAngle = 7.5f + tension_prog * 4.0f;
+        headTilt = 4.0f + tension_prog * 3.0f; // Baja el ala del sombrero intimidante
+        kneeFlex = 4.0f + tension_prog * 3.0f;
     } else if (state_phase == 2) { // Disparo / Quick-draw
-        bodyAngle = -4.0f; // Firme con retroceso
-        frontArmAngle = -90.0f; // Brazo extendido horizontal apuntando al rival
-        backArmAngle = 30.0f; // Brazo trasero hacia atrás equilibrando
-    } else if (state_phase == 4) { // Falta (cabizbajo)
-        bodyAngle = 12.0f;
-        headTilt = 15.0f;
-        frontArmAngle = 45.0f;
-        backArmAngle = 20.0f;
+        bodyAngle = -6.0f; // Inclinación heroica hacia atrás absorbiendo el calibre .45
+        headTilt = 2.0f;
+    } else if (state_phase == 4) { // Falta (avergonzado / cabizbajo)
+        bodyAngle = 14.0f;
+        headTilt = 22.0f;
     }
 
-    float torsoY = -5.0f + breathe + shake;
-    float headY  = -86.0f + breathe + shake;
+    float torsoY = -5.0f + breathe + shake + (kneeFlex * 0.6f);
+    float headY  = -86.0f + breathe * 1.15f + shake + (kneeFlex * 0.6f);
 
-    // 1. SOMBRA DE SUELO (Ancla al personaje firmemente sobre el terreno)
-    drawR(2, 155, 140, 14, 0.0f, cBlack, false);
+    // 1. SOMBRA DE SUELO DINÁMICA
+    drawR(2, 155, 145 + chestExpand * 2.0f, 14, 0.0f, cBlack, false);
 
-    // 2. BRAZO TRASERO (Capa de fondo - enmarca la silueta exteriormente como en la referencia)
+    // 2. PONCHO / GUARDAPOLVO TRASERO (Onda de tela al viento detrás de las piernas)
+    float capeAngle = bodyAngle + 12.0f + windGust * 0.9f + ((state_phase == 2) ? 18.0f : 0.0f);
+    drawR(-28 - windGust * 0.4f, torsoY + 38, 34, 88, capeAngle, cPoncho, true, 3);
+    drawR(-34 - windGust * 0.6f, torsoY + 76, 30, 6, capeAngle, cPonchoTrim, false); // Franja decorativa del poncho
+
+    // 3. BRAZO TRASERO
     if (state_phase == 2) {
-        // En disparo: brazo doblado hacia atrás equilibrando la postura (estilo cómic)
-        drawR(-20, torsoY - 4, 18, 44, bodyAngle + 20.0f, cBackLimb, true, 3);
-        drawR(-14, torsoY + 30, 16, 42, bodyAngle - 28.0f, cBackLimb, true, 3);
-        drawR(-8, torsoY + 52, 16, 16, bodyAngle - 10.0f, cBackLimb, true, 2); // Puño en la cadera trasera
+        drawR(-20, torsoY - 4, 18, 44, bodyAngle + 24.0f, cBackLimb, true, 3);
+        drawR(-14, torsoY + 30, 16, 42, bodyAngle - 32.0f, cBackLimb, true, 3);
+        drawR(-8, torsoY + 52, 16, 16, bodyAngle - 10.0f, cBackLimb, true, 2);
     } else if (state_phase == 1) {
-        // En tensión: brazo trasero retraído y tenso
-        drawR(-30, torsoY - 6, 18, 46, bodyAngle - 22.0f, cBackLimb, true, 3);
-        drawR(-38, torsoY + 30, 16, 42, bodyAngle - 6.0f, cBackLimb, true, 3);
-        drawR(-38, torsoY + 58, 16, 16, bodyAngle - 6.0f, cBackLimb, true, 2); // Puño tenso
+        drawR(-30, torsoY - 6, 18, 46, bodyAngle - 24.0f, cBackLimb, true, 3);
+        drawR(-38, torsoY + 30, 16, 42, bodyAngle - 8.0f, cBackLimb, true, 3);
+        drawR(-38, torsoY + 58, 16, 16, bodyAngle - 8.0f, cBackLimb, true, 2);
     } else {
-        // En reposo (Fase 0 y 4): brazo cuelga al costado exterior con sutil flexión natural de codo
-        drawR(-34, torsoY + 4, 18, 46, bodyAngle - 10.0f, cBackLimb, true, 3);
-        drawR(-38, torsoY + 42, 16, 46, bodyAngle + 2.0f, cBackLimb, true, 3);
-        drawR(-38, torsoY + 62, 16, 4, bodyAngle + 2.0f, cBlack, false);        // Dobladillo puño
-        drawR(-38, torsoY + 74, 16, 18, bodyAngle + 2.0f, cBackLimb, true, 2); // Mano relajada
+        float idleSwing = std::sin(tLocal * 1.6f) * 3.0f;
+        drawR(-34, torsoY + 4, 18, 46, bodyAngle - 10.0f + idleSwing, cBackLimb, true, 3);
+        drawR(-38, torsoY + 42, 16, 46, bodyAngle + 2.0f + idleSwing, cBackLimb, true, 3);
+        drawR(-38, torsoY + 62, 16, 4, bodyAngle + 2.0f + idleSwing, cBlack, false);
+        drawR(-38, torsoY + 74, 16, 18, bodyAngle + 2.0f + idleSwing, cBackLimb, true, 2);
     }
 
-    // 3. PIERNAS Y BOTAS EN POSTURA ANCHA (A) - Firmes, rectas y sólidas estilo cómic (sin flexiones raras)
-    // Pierna trasera (Pantalón ancho y aplomado)
-    drawR(-24, 95, 34, 96, -3.0f, cBackLimb, true, 3);
-    drawR(-24, 95, 24, 3, -3.0f, cBlack, false);       // Pliegue cómic de rodilla
-    drawR(-28, 145, 48, 20, 0.0f, cBackLimb, true, 3); // Bota trasera
-    drawR(-46, 149, 12, 10, 0.0f, cBlack, false);      // Tacón trasero
-    drawR(-26, 153, 52, 4, 0.0f, cBlack, false);       // Suela bota trasera
+    // 4. PIERNAS, CHAPARRERAS Y BOTAS CON ESPUELAS
+    // Pierna trasera
+    drawR(-24, 95, 34, 96, -3.0f - kneeFlex * 0.5f, cBackLimb, true, 3);
+    drawR(-24, 95, 24, 3, -3.0f, cBlack, false);
+    drawR(-28, 145, 48, 20, 0.0f, cBackLimb, true, 3);
+    drawR(-46, 149, 12, 10, 0.0f, cBlack, false);
+    drawR(-54, 147, 9, 9, t * 30.0f, cGold, true, 1); // Espuela trasera
+    drawR(-26, 153, 52, 4, 0.0f, cBlack, false);
 
-    // Pierna delantera (Pantalón ancho y firme hacia adelante)
-    drawR(24, 95, 36, 96, 4.0f, cWhite, true, 3);
-    drawR(10, 95, 10, 92, 4.0f, cBackLimb, false);     // Sombra lateral interior
-    drawR(26, 95, 26, 3, 4.0f, cBlack, false);        // Pliegue cómic de rodilla
-    drawR(30, 145, 52, 20, 0.0f, cWhite, true, 3);     // Bota delantera
-    drawR(10, 149, 12, 10, 0.0f, cBlack, false);       // Tacón delantero
-    drawR(50, 147, 16, 14, 0.0f, cWhite, true, 2);     // Puntera angular hacia el rival
-    drawR(32, 153, 56, 4, 0.0f, cBlack, false);        // Suela bota delantera
+    // Pierna delantera
+    drawR(24, 95, 36, 96, 4.0f + kneeFlex * 0.5f, cWhite, true, 3);
+    drawR(10, 95, 10, 92, 4.0f + kneeFlex * 0.5f, cBackLimb, false);
+    // Flecos laterales de las chaparreras (Chaps) que vibran con el viento
+    for (int f = 0; f < 4; ++f) {
+        drawR(42, 68 + f * 16, 8, 4, 25.0f + windGust, cBackLimb, true, 1);
+    }
+    drawR(26, 95, 26, 3, 4.0f, cBlack, false);
+    drawR(30, 145, 52, 20, 0.0f, cWhite, true, 3);
+    drawR(10, 149, 12, 10, 0.0f, cBlack, false);
+    drawR(2, 147, 10, 10, t * 30.0f + 45.0f, cGold, true, 1); // Estrella de la espuela delantera
+    drawR(50, 147, 16, 14, 0.0f, cWhite, true, 2);
+    drawR(32, 153, 56, 4, 0.0f, cBlack, false);
 
-    // 4. PELVIS Y CADERA (Base de apoyo sólida y nivelada)
-    drawR(0, 48, 60, 26, 0.0f, cWhite, true, 3);
+    // 5. PELVIS Y CADERA
+    drawR(0, 48 + kneeFlex * 0.4f, 60, 26, 0.0f, cWhite, true, 3);
 
-    // 5. TORSO HEROICO CON V-TAPER (Pecho ancho en hombros, cintura estrecha estilo cómic)
-    // Contorno exterior unificado
-    drawR(0, torsoY - 10, 68, 54, bodyAngle, cBlack, false);
+    // 6. TORSO HEROICO CON EXPANSIÓN DE PECHO AL RESPIRAR Y CHALECO
+    drawR(0, torsoY - 10, 68 + chestExpand, 54, bodyAngle, cBlack, false);
     drawR(0, torsoY + 20, 52, 52, bodyAngle, cBlack, false);
 
-    // Relleno blanco continuo (silueta atlética que abre espacio para los brazos al costado)
-    drawR(0, torsoY - 10, 62, 48, bodyAngle, cWhite, false);
+    drawR(0, torsoY - 10, 62 + chestExpand, 48, bodyAngle, cWhite, false);
     drawR(0, torsoY + 20, 46, 48, bodyAngle, cWhite, false);
 
-    // Sombreado celular en el lateral de la espalda
-    drawR(-20, torsoY + 4, 10, 80, bodyAngle, cBackLimb, false);
-    // Pliegue central sutil de la camisa vaquera
-    drawR(4, torsoY + 8, 3, 38, bodyAngle, cBlack, false);
+    // Chaleco abierto / Poncho corto sobre el pecho
+    drawR(-14, torsoY - 2, 24, 58, bodyAngle, cPoncho, true, 2);
+    drawR(18, torsoY - 2, 18, 56, bodyAngle, cPoncho, true, 2);
 
-    // 6. FUNDA (Holster) en la cadera delantera
-    drawR(24, torsoY + 60, 20, 46, bodyAngle + 6.0f, cHolster, true, 3);
+    // Pliegue central y botones de la camisa
+    drawR(2, torsoY + 6, 3, 42, bodyAngle, cBlack, false);
+    drawR(6, torsoY - 2, 4, 4, bodyAngle, cBlack, false);
+    drawR(6, torsoY + 12, 4, 4, bodyAngle, cBlack, false);
 
-    // Si el revólver está enfundado (Fases 0, 1, 4), dibujamos la empuñadura asomándose
-    if (state_phase != 2) {
+    // INSIGNIA DE SHERIFF (Estrella dorada de 8 puntas en el pecho)
+    drawR(-12, torsoY - 12, 14, 14, bodyAngle, cGold, true, 1);
+    drawR(-12, torsoY - 12, 14, 14, bodyAngle + 45.0f, cGold, true, 1);
+    drawR(-12, torsoY - 12, 5, 5, bodyAngle, cWhite, false);
+
+    // 7. FUNDA (Holster) Y BALAS EN EL CINTURÓN
+    drawR(24, torsoY + 60, 22, 48, bodyAngle + 6.0f, cHolster, true, 3);
+    drawR(24, torsoY + 50, 24, 6, bodyAngle + 6.0f, cBlack, false); // Correa de cuero
+
+    if (state_phase != 2 && state_phase != 4) {
+        // Empuñadura asomando lista para ser tomada
         drawR(22, torsoY + 42, 14, 26, bodyAngle - 20.0f, cWhite, true, 2);
-        drawR(28, torsoY + 36, 6, 8, bodyAngle - 20.0f, cBlack, false); // Martillo
+        drawR(22, torsoY + 42, 8, 16, bodyAngle - 20.0f, cGold, false); // Cachas nacaradas/doradas
+        drawR(28, torsoY + 36, 6, 8, bodyAngle - 20.0f, cBlack, false);
     }
 
-    // 7. CINTURÓN Y HEBILLA BRUTALISTA (Cintura definida)
-    drawR(0, torsoY + 38, 56, 16, bodyAngle, cBlack, true, 2);
-    // Hebilla metálica plateada
-    drawR(2, torsoY + 38, 20, 18, bodyAngle, cSilver, true, 2);
-    drawR(2, torsoY + 38, 8, 8, bodyAngle, cBlack, false);
-    // Bolsita / cartuchera lateral
-    drawR(-20, torsoY + 38, 10, 16, bodyAngle, cHatBand, true, 2);
+    // 8. CINTURÓN CON CARTUCHOS DORADOS Y HEBILLA
+    drawR(0, torsoY + 38, 58, 16, bodyAngle, cBlack, true, 2);
+    // Balas doradas alineadas en la canana
+    for (int b = -2; b <= 2; ++b) {
+        if (b == 0) continue; // Espacio para la hebilla
+        drawR(b * 10, torsoY + 38, 4, 11, bodyAngle, cGold, false);
+    }
+    drawR(2, torsoY + 38, 22, 18, bodyAngle, cSilver, true, 2);
+    drawR(2, torsoY + 38, 10, 8, bodyAngle, cGold, false);
 
-    // 8. CUELLO Y PAÑUELO (Bandana triangular icónica de la referencia)
+    // 9. CUELLO Y PAÑUELO CON COLAS AL VIENTO
+    // Colas del pañuelo flameando hacia atrás con el viento
+    drawR(-24 - windGust * 0.5f, headY + 30, 32, 10, bodyAngle - 12.0f + windGust * 1.5f, cBandana, true, 2);
+    drawR(-20 - windGust * 0.3f, headY + 38, 26, 8, bodyAngle - 25.0f + windGust * 1.2f, cBandana, true, 2);
+
     drawR(2, headY + 34, 26, 18, bodyAngle, cWhite, false);
-    // Banda del pañuelo en el cuello
     drawR(2, headY + 30, 42, 15, bodyAngle, cBandana, true, 2);
-    // Pico triangular frontal que cae sobre el pecho
-    drawR(14, headY + 42, 28, 28, bodyAngle + 45.0f, cBandana, true, 2);
-    drawR(12, headY + 42, 18, 18, bodyAngle + 45.0f, {35, 35, 38, 255}, false);
+    drawR(14, headY + 42, 28, 28, bodyAngle + 45.0f + windGust * 0.3f, cBandana, true, 2);
+    drawR(12, headY + 42, 16, 16, bodyAngle + 45.0f + windGust * 0.3f, cBlack, false);
 
-    // 9. CABEZA Y CARA
+    // 10. CABEZA, EXPRESIÓN FACIAL Y PALILLO DE TRIGO
     drawR(4, headY, 46, 46, bodyAngle + headTilt, cWhite, true, 3);
-    // Sombra misteriosa bajo el ala del sombrero
     drawR(4, headY - 11, 44, 22, bodyAngle + headTilt, cFaceShadow, false);
-    // Dos ojos minimalistas sutiles
-    drawR(14, headY + 2, 5, 5, bodyAngle + headTilt, cBlack, false);
-    drawR(-4, headY + 2, 5, 5, bodyAngle + headTilt, cBlack, false);
 
-    // 10. SOMBRERO (Ala súper ancha y copa con cinta oscura)
-    // Ala horizontal ancha
-    drawR(4, headY - 24, 158, 13, bodyAngle + headTilt, cWhite, true, 3);
-    drawR(4, headY - 18, 154, 4, bodyAngle + headTilt, cBlack, false); // Borde inferior ala
-    // Copa rectangular con hendidura superior sutil
-    drawR(4, headY - 50, 56, 40, bodyAngle + headTilt, cWhite, true, 3);
-    // Cinta oscura de la copa
-    drawR(4, headY - 35, 56, 13, bodyAngle + headTilt, cHatBand, true, 2);
-    drawR(4, headY - 35, 14, 11, bodyAngle + headTilt, cSilver, true, 1); // Hebilla del sombrero
+    // Briznas de trigo / palillo en la comisura de la boca (sube y baja sutilmente)
+    if (state_phase != 4) {
+        float chewAngle = (state_phase == 1) ? -5.0f : (std::sin(tLocal * 4.5f) * 8.0f + 12.0f);
+        drawR(30, headY + 14, 24, 3, bodyAngle + headTilt + chewAngle, cGold, true, 1);
+    }
 
-    // 11. BRAZO DELANTERO Y ACCIÓN DE LA MANO Y REVÓLVER
-    if (state_phase == 0) {
-        // EN REPOSO / ESPERA: Brazo exterior limpio con sutil flexión natural de codo (estilo ilustración de referencia)
-        // PASO 1: Contorno exterior
-        drawR(36, torsoY + 4, 26, 46, bodyAngle + 10.0f, cBlack, false);
-        drawR(40, torsoY + 42, 24, 46, bodyAngle - 2.0f, cBlack, false);
-
-        // PASO 2: Relleno blanco continuo (manga unificada sin costura)
-        drawR(36, torsoY + 4, 20, 42, bodyAngle + 10.0f, cWhite, false);
-        drawR(40, torsoY + 42, 18, 42, bodyAngle - 2.0f, cWhite, false);
-
-        // PASO 3: Puño y mano relajada
-        drawR(40, torsoY + 62, 18, 4, bodyAngle - 2.0f, cBackLimb, false);  // Dobladillo puño
-        drawR(40, torsoY + 74, 16, 20, bodyAngle - 2.0f, cWhite, true, 2);  // Mano geométrica
-        drawR(44, torsoY + 71, 5, 9, bodyAngle + 10.0f, cWhite, true, 1);   // Pulgar
-        drawR(40, torsoY + 82, 14, 4, bodyAngle - 2.0f, cBlack, false);     // Sombra dedos
-        drawR(40, torsoY + 77, 10, 2, bodyAngle - 2.0f, cBlack, false);     // Nudillos
+    // Ojos y Expresiones según la fase
+    if (isBlinking) {
+        // Ojos cerrados (parpadeo)
+        drawR(14, headY + 2, 7, 2, bodyAngle + headTilt, cBlack, false);
+        drawR(-4, headY + 2, 7, 2, bodyAngle + headTilt, cBlack, false);
     } else if (state_phase == 1) {
-        // EN TENSIÓN (DUELO / ACECHO): Codo afilado hacia afuera (>) y mano acechando la cartuchera
-        // PASO 1: Contorno perimetral unificado en negro
-        drawR(38, torsoY - 8, 26, 46, bodyAngle + 22.0f, cBlack, false);
-        drawR(36, torsoY + 26, 24, 44, bodyAngle - 22.0f, cBlack, false);
-
-        // PASO 2: Relleno blanco continuo (sin corte en el codo)
-        drawR(38, torsoY - 8, 20, 42, bodyAngle + 22.0f, cWhite, false);
-        drawR(36, torsoY + 26, 18, 40, bodyAngle - 22.0f, cWhite, false);
-
-        // PASO 3: Detalles y mano acechando la cartuchera
-        drawR(46, torsoY + 9, 6, 2, bodyAngle + 22.0f, cBlack, false);      // Pliegue en el codo
-        drawR(28, torsoY + 44, 18, 4, bodyAngle - 22.0f, cBackLimb, false); // Dobladillo puño
-
-        // Mano en garra tensa acechando justo sobre la empuñadura
-        drawR(24, torsoY + 46, 16, 15, bodyAngle - 15.0f, cWhite, true, 2); // Palma arqueada
-        drawR(20, torsoY + 40, 6, 8, bodyAngle - 25.0f, cWhite, true, 1);   // Pulgar tenso
-        drawR(27, torsoY + 53, 12, 10, bodyAngle + 15.0f, cWhite, true, 1); // Dedos listos para atenazar
-        drawR(27, torsoY + 54, 8, 2, bodyAngle + 15.0f, cBlack, false);    // Nudillos
-    } else if (state_phase == 4) {
-        // Falta: brazo cuelga derrotado
-        drawR(36, torsoY + 38, 20, 74, bodyAngle + 35.0f, cWhite, true, 3);
-        drawR(44, torsoY + 76, 16, 16, bodyAngle + 35.0f, cWhite, true, 2);
+        // Mirada de halcón en Tensión: ojos entrecerrados con brillo rojo letal que crece con tension_prog
+        drawR(14, headY + 2, 8, 4, bodyAngle + headTilt - 8.0f, cWhite, false);
+        drawR(-4, headY + 2, 8, 4, bodyAngle + headTilt - 5.0f, cWhite, false);
+        if (tension_prog > 0.25f) {
+            drawR(15, headY + 2, 5, 5, bodyAngle + headTilt, cRedGlow, false);
+            drawR(-3, headY + 2, 5, 5, bodyAngle + headTilt, cRedGlow, false);
+            // Destello horizontal en el ojo principal cuando la tensión está al límite
+            if (tension_prog > 0.65f) {
+                drawR(15, headY + 2, 18 * tension_prog, 2, 0.0f, cRedGlow, false);
+            }
+        }
+        // Gota de sudor frío deslizándose por la mejilla en plena tensión
+        float sweatY = std::fmod(tLocal * 12.0f, 18.0f);
+        drawR(-14, headY - 2 + sweatY, 4, 7, bodyAngle, cSweat, true, 1);
     } else if (state_phase == 2) {
-        // DISPARAR / QUICK-DRAW: Manga horizontal continua a la altura del hombro (ritmo más pausado y con peso)
-        float recoilCycle = fmod(t * 2.5f, 1.0f); // Velocidad moderada y cinematográfica
-        float recoilKick = (recoilCycle < 0.30f) ? (1.0f - recoilCycle / 0.30f) : 0.0f;
-        float recoilAngle = -recoilKick * 12.0f; // Salto del cañón hacia arriba
-        float recoilX = -recoilKick * 5.0f;     // Retroceso horizontal del brazo
+        // Ojos encendidos en el instante del disparo
+        drawR(14, headY + 1, 7, 5, bodyAngle + headTilt, cFlash, false);
+        drawR(-4, headY + 1, 7, 5, bodyAngle + headTilt, cFlash, false);
+    } else if (state_phase == 4) {
+        // Ojos de frustración "> <" por haber hecho falta
+        drawR(14, headY + 4, 8, 2, bodyAngle + headTilt + 25.0f, cBlack, false);
+        drawR(14, headY + 6, 8, 2, bodyAngle + headTilt - 25.0f, cBlack, false);
+        // Gota de sudor gigante estilo anime/cómic en la sien
+        float dropBounce = std::sin(t * 6.0f) * 2.0f;
+        drawR(-18, headY - 6 + dropBounce, 8, 16, bodyAngle, cSweat, true, 2);
+    } else {
+        // Ojos normales con micro-movimiento de mirada
+        float lookShift = (std::sin(tLocal * 0.8f) > 0.7f) ? 1.5f : 0.0f;
+        drawR(14 + lookShift, headY + 2, 5, 6, bodyAngle + headTilt, cBlack, false);
+        drawR(-4 + lookShift, headY + 2, 5, 6, bodyAngle + headTilt, cBlack, false);
+        // Brillo blanco diminuto en los ojos para dar vida
+        drawR(15 + lookShift, headY + 1, 2, 2, 0.0f, cWhite, false);
+        drawR(-3 + lookShift, headY + 1, 2, 2, 0.0f, cWhite, false);
+    }
 
-        // Sombra de volumen inferior continua bajo todo el brazo
+    // 11. SOMBRERO CON PERSONALIDAD
+    float hatTilt = bodyAngle + headTilt + ((state_phase == 1) ? 3.0f : 0.0f);
+    drawR(4, headY - 24, 158, 13, hatTilt, cWhite, true, 3);
+    drawR(4, headY - 18, 154, 4, hatTilt, cBlack, false);
+    drawR(4, headY - 50, 56, 40, hatTilt, cWhite, true, 3);
+    drawR(4, headY - 35, 56, 13, hatTilt, cHatBand, true, 2);
+    drawR(4, headY - 35, 14, 11, hatTilt, cGold, true, 1); // Hebilla dorada en el sombrero
+    // Pluma o muesca en el sombrero
+    drawR(-22, headY - 46, 14, 6, hatTilt - 35.0f + windGust * 0.5f, cBandana, true, 1);
+
+    // 12. BRAZO DELANTERO Y ACCIÓN DE LA MANO / REVÓLVER
+    if (state_phase == 0) {
+        // EN ESPERA: Balanceo natural de brazo y dedos "tamborileando" cerca del arma
+        float armSwing = std::sin(tLocal * 1.6f) * 2.5f;
+        float fingerTap = std::sin(tLocal * 8.0f) * 6.0f;
+
+        drawR(36, torsoY + 4, 26, 46, bodyAngle + 10.0f + armSwing, cBlack, false);
+        drawR(40, torsoY + 42, 24, 46, bodyAngle - 2.0f + armSwing, cBlack, false);
+
+        drawR(36, torsoY + 4, 20, 42, bodyAngle + 10.0f + armSwing, cWhite, false);
+        drawR(40, torsoY + 42, 18, 42, bodyAngle - 2.0f + armSwing, cWhite, false);
+
+        drawR(40, torsoY + 62, 18, 4, bodyAngle - 2.0f + armSwing, cBackLimb, false);
+        drawR(40, torsoY + 74, 16, 20, bodyAngle - 2.0f + armSwing, cWhite, true, 2);
+        drawR(44, torsoY + 71, 5, 9, bodyAngle + 12.0f + fingerTap, cWhite, true, 1); // Pulgar vivo
+        drawR(40, torsoY + 82, 14, 4, bodyAngle - 2.0f + fingerTap * 0.5f, cBlack, false);
+        drawR(40, torsoY + 77, 10, 2, bodyAngle - 2.0f, cBlack, false);
+    } else if (state_phase == 1) {
+        // EN TENSIÓN: Codo afilado y dedos con espasmos nerviosos sobre la culata
+        float twitch = std::sin(t * 28.0f) * (4.0f + tension_prog * 10.0f);
+
+        drawR(38, torsoY - 8, 26, 46, bodyAngle + 24.0f, cBlack, false);
+        drawR(36, torsoY + 26, 24, 44, bodyAngle - 24.0f, cBlack, false);
+
+        drawR(38, torsoY - 8, 20, 42, bodyAngle + 24.0f, cWhite, false);
+        drawR(36, torsoY + 26, 18, 40, bodyAngle - 24.0f, cWhite, false);
+
+        drawR(46, torsoY + 9, 6, 2, bodyAngle + 24.0f, cBlack, false);
+        drawR(28, torsoY + 44, 18, 4, bodyAngle - 24.0f, cBackLimb, false);
+
+        // Mano en garra crispada con movimiento nervioso de dedos (twitch)
+        drawR(24, torsoY + 46, 16, 15, bodyAngle - 15.0f, cWhite, true, 2);
+        drawR(19, torsoY + 40, 6, 9, bodyAngle - 25.0f + twitch, cWhite, true, 1);       // Pulgar crispado
+        drawR(27, torsoY + 53, 12, 10, bodyAngle + 15.0f - twitch * 0.8f, cWhite, true, 1); // Dedos abriéndose y cerrándose
+        drawR(27, torsoY + 54, 8, 2, bodyAngle + 15.0f, cBlack, false);
+    } else if (state_phase == 4) {
+        // EN FALTA: Brazo caído con el revólver colgando hacia el piso y banderita de "Puf"
+        float dangle = std::sin(t * 3.5f) * 5.0f;
+        drawR(34, torsoY + 36, 20, 74, bodyAngle + 32.0f, cWhite, true, 3);
+        drawR(42, torsoY + 74, 16, 16, bodyAngle + 32.0f, cWhite, true, 2);
+        // Revólver colgando hacia abajo sin fuerza
+        drawR(46, torsoY + 92, 14, 34, 75.0f + dangle, cWhite, true, 2);
+        // Pequeña nubecita gris de tiro fallido en el piso
+        drawR(58, torsoY + 125, 16, 12, t * 20.0f, cBackLimb, true, 1);
+    } else if (state_phase == 2) {
+        // DISPARO / QUICK-DRAW: Fogonazo espectacular, trazadora de bala y humo (ritmo cinematográfico con peso)
+        float recoilCycle = std::fmod(t * 1.2f, 1.0f);
+        float recoilKick = (recoilCycle < 0.25f) ? (1.0f - recoilCycle / 0.25f) : 0.0f;
+        float recoilAngle = -recoilKick * 12.0f;
+        float recoilX = -recoilKick * 5.0f;
+
         drawR(58 + recoilX, torsoY - 12, 78, 6, recoilAngle * 0.4f, cBlack, false);
-
-        // Manga horizontal continua de hombro a muñeca (a nivel de hombro torsoY - 22)
         drawR(58 + recoilX, torsoY - 22, 78, 22, recoilAngle * 0.4f, cWhite, true, 3);
-
-        // Dobladillo puño en la muñeca
         drawR(96 + recoilX, torsoY - 22, 4, 22, recoilAngle * 0.4f, cBackLimb, false);
 
-        // REVÓLVER BRUTALISTA CON RETROCESO COMPLETO Y MANO ARTICULADA
         float gunBaseX = 106.0f + recoilX;
         float gunBaseY = torsoY - 22.0f;
         float gunRot = recoilAngle;
 
         auto drawGunPart = [&](float relX, float relY, float w, float h, float partRot, SDL_Color col, bool outline = true, int bW = 2) {
             float rad = gunRot * 3.14159f / 180.0f;
-            float rx = relX * cos(rad) - relY * sin(rad);
-            float ry = relX * sin(rad) + relY * cos(rad);
+            float rx = relX * std::cos(rad) - relY * std::sin(rad);
+            float ry = relX * std::sin(rad) + relY * std::cos(rad);
             drawR(gunBaseX + rx, gunBaseY + ry, w, h, gunRot + partRot, col, outline, bW);
         };
 
-        // Empuñadura angulada
+        // Empuñadura con detalle dorado
         drawGunPart(6, 14, 16, 28, 20.0f, cWhite, true, 2);
+        drawGunPart(6, 14, 8, 18, 20.0f, cGold, false);
         drawGunPart(8, 26, 14, 5, 20.0f, cBlack, false);
-        // Martillo
-        drawGunPart(2, -10, 8, 10, -15.0f, cBlack, false);
-        // Guardamonte
+        // Martillo, Guardamonte y Armazón
+        drawGunPart(2, -10, 8, 10, -15.0f - recoilKick * 25.0f, cBlack, false);
         drawGunPart(16, 8, 14, 9, 0.0f, cBlack, true, 1);
-        // Armazón
         drawGunPart(18, -3, 22, 18, 0.0f, cWhite, true, 2);
-        // Tambor rectangular con estrías negras
+        // Tambor
         drawGunPart(32, -3, 26, 20, 0.0f, cWhite, true, 2);
         drawGunPart(32, -7, 20, 3, 0.0f, cBlack, false);
         drawGunPart(32, 1, 20, 3, 0.0f, cBlack, false);
-        // Cañón largo y recto
-        drawGunPart(62, -5, 42, 13, 0.0f, cWhite, true, 2);
-        // Guía inferior del cañón
+        // Cañón pesado
+        drawGunPart(62, -5, 44, 13, 0.0f, cWhite, true, 2);
         drawGunPart(52, 3, 22, 5, 0.0f, cBlack, false);
-        // Mirilla frontal en la punta
         drawGunPart(80, -13, 6, 6, 0.0f, cBlack, false);
 
-        // MANO ARTICULADA EMPUÑANDO EL REVÓLVER
-        drawGunPart(0, 0, 16, 18, 0.0f, cWhite, true, 2);                // Dorso de la mano
-        drawGunPart(2, -7, 8, 8, -20.0f, cWhite, true, 1);               // Pulgar sobre el armazón
-        drawGunPart(9, 12, 10, 20, 15.0f, cWhite, true, 1);              // Dedos cerrados sobre la culata
-        drawGunPart(9, 9, 7, 2, 15.0f, cBlack, false);                   // Línea de nudillos
-        drawGunPart(9, 15, 7, 2, 15.0f, cBlack, false);                  // Línea de nudillos
-        drawGunPart(13, 2, 9, 4, 0.0f, cWhite, false);                   // Dedo índice al gatillo
+        // Mano empuñando
+        drawGunPart(0, 0, 16, 18, 0.0f, cWhite, true, 2);
+        drawGunPart(2, -7, 8, 8, -20.0f, cWhite, true, 1);
+        drawGunPart(9, 12, 10, 20, 15.0f, cWhite, true, 1);
+        drawGunPart(9, 9, 7, 2, 15.0f, cBlack, false);
+        drawGunPart(9, 15, 7, 2, 15.0f, cBlack, false);
+        drawGunPart(13, 2, 9, 4, 0.0f, cWhite, false);
 
-        // CASQUILLO DORADO EXPULSADO (Sincronizado con cada disparo, movimiento suave)
+        // Casquillo dorado expulsado girando en el aire
         float shellProgress = recoilCycle;
-        float shellX = gunBaseX + 28.0f - shellProgress * 42.0f;
-        float shellY = gunBaseY - 12.0f - sin(shellProgress * 3.14159f) * 36.0f + shellProgress * 14.0f;
-        float shellRot = shellProgress * 360.0f;
-        drawR(shellX, shellY, 11, 6, shellRot, {245, 210, 50, 255}, true, 1);
+        float shellX = gunBaseX + 28.0f - shellProgress * 48.0f;
+        float shellY = gunBaseY - 14.0f - std::sin(shellProgress * 3.14159f) * 42.0f + shellProgress * 18.0f;
+        drawR(shellX, shellY, 12, 6, shellProgress * 540.0f, cGold, true, 1);
 
-        // FOGONAZO BRUTALISTA Y HUMO
-        if (recoilKick > 0.40f) {
-            float rad = gunRot * 3.14159f / 180.0f;
-            float mx = 94.0f * cos(rad) - (-5.0f) * sin(rad);
-            float my = 94.0f * sin(rad) + (-5.0f) * cos(rad);
-            float muzzleX = gunBaseX + mx;
-            float muzzleY = gunBaseY + my;
+        // Fogonazo + Línea de Trazadora Balística + Anillos de humo
+        float rad = gunRot * 3.14159f / 180.0f;
+        float muzzleX = gunBaseX + 94.0f * std::cos(rad) - (-5.0f) * std::sin(rad);
+        float muzzleY = gunBaseY + 94.0f * std::sin(rad) + (-5.0f) * std::cos(rad);
 
-            // Estrella geométrica de 8 puntas
-            drawR(muzzleX + 16, muzzleY, 44, 44, gunRot, cFlash, true, 2);
-            drawR(muzzleX + 16, muzzleY, 44, 44, gunRot + 45.0f, cFlash, true, 2);
-            drawR(muzzleX + 16, muzzleY, 20, 20, gunRot, cWhite, false);
+        if (recoilKick > 0.35f) {
+            // Trazadora amarilla/blanca que cruza el aire hacia el oponente
+            if (recoilKick > 0.65f) {
+                drawR(muzzleX + 260, muzzleY, 420, 4, gunRot, cFlash, false);
+                drawR(muzzleX + 260, muzzleY, 420, 2, gunRot, cWhite, false);
+            }
 
-            // Nubes de humo saliendo del cañón
-            drawR(muzzleX + 46, muzzleY - 8, 14, 14, gunRot + 20.0f, {225, 225, 225, 255}, true, 1);
-            drawR(muzzleX + 66, muzzleY + 2, 22, 22, gunRot + 35.0f, {195, 195, 195, 255}, true, 1);
-            drawR(muzzleX + 88, muzzleY - 4, 18, 18, gunRot + 15.0f, {175, 175, 175, 255}, true, 1);
+            // Estrella de fogonazo explosiva
+            drawR(muzzleX + 18, muzzleY, 48, 48, gunRot, cFlash, true, 2);
+            drawR(muzzleX + 18, muzzleY, 48, 48, gunRot + 45.0f, cFlash, true, 2);
+            drawR(muzzleX + 28, muzzleY, 34, 16, gunRot, cRedGlow, false);
+            drawR(muzzleX + 16, muzzleY, 22, 22, gunRot, cWhite, false);
         }
+
+        // Humo persistente que sube desde la boca del cañón durante todo el ciclo
+        float smokeDrift = recoilCycle * 55.0f;
+        drawR(muzzleX + 42 + smokeDrift * 0.5f, muzzleY - 8 - smokeDrift * 0.6f, 16 + recoilCycle * 10.0f, 16 + recoilCycle * 10.0f, t * 40.0f, {225, 225, 225, 255}, true, 1);
+        drawR(muzzleX + 64 + smokeDrift * 0.8f, muzzleY + 2 - smokeDrift * 0.9f, 22 + recoilCycle * 14.0f, 22 + recoilCycle * 14.0f, -t * 30.0f, {195, 195, 195, 255}, true, 1);
     }
 }
 
@@ -432,7 +593,23 @@ struct Tumbleweed {
     bool active;
 };
 
-void drawDesertBackground(SDL_Renderer* ren, SDL_Texture* whiteTex, float t, Tumbleweed* weeds, int max_weeds, int state) {
+struct Vulture {
+    float x, y;
+    float radiusX, radiusY;
+    float speed;
+    float angle;
+    float wingSpan;
+};
+
+struct DustParticle {
+    float x, y;
+    float speed;
+    float length;
+    float thickness;
+    float alpha;
+};
+
+void drawDesertBackground(SDL_Renderer* ren, SDL_Texture* whiteTex, float t, Tumbleweed* weeds, int max_weeds, int state, Vulture* vultures = nullptr, int max_vultures = 0, DustParticle* dust = nullptr, int max_dust = 0, float tension_prog = 0.0f) {
     if (state == 1) { // TENSION
         SDL_SetRenderDrawColor(ren, 15, 15, 15, 255);
     } else if (state == 2) { // DRAW
@@ -452,7 +629,7 @@ void drawDesertBackground(SDL_Renderer* ren, SDL_Texture* whiteTex, float t, Tum
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
     }
 
-    // Dibujar formas planas sin bordes gruesos para no robar atencion
+    // Helper para figuras geométricas planas
     auto drawFlat = [&](float cx, float cy, float w, float h, float angle, SDL_Color color) {
         float finalX = cx - w/2.0f;
         float finalY = cy - h/2.0f;
@@ -467,22 +644,44 @@ void drawDesertBackground(SDL_Renderer* ren, SDL_Texture* whiteTex, float t, Tum
     SDL_Color mountCol = (state == 1) ? SDL_Color{20, 20, 20, 255} : SDL_Color{215, 215, 215, 255};
     SDL_Color cloudCol = (state == 1) ? SDL_Color{18, 18, 18, 255} : SDL_Color{235, 235, 235, 255};
     
-    // Nubes
-    drawFlat(200, 150, 150, 30, 0, cloudCol);
-    drawFlat(220, 120, 80, 30, 0, cloudCol);
-    drawFlat(1600, 250, 200, 40, 0, cloudCol);
-    drawFlat(1650, 210, 100, 40, 0, cloudCol);
-    drawFlat(800, 180, 120, 30, 0, cloudCol);
+    // Nubes flotando lentamente
+    float cloudDrift = std::fmod(t * 8.0f, 2400.0f);
+    drawFlat(200 + cloudDrift * 0.5f, 150, 150, 30, 0, cloudCol);
+    drawFlat(220 + cloudDrift * 0.5f, 120, 80, 30, 0, cloudCol);
+    drawFlat(1600 - cloudDrift * 0.3f, 250, 200, 40, 0, cloudCol);
+    drawFlat(1650 - cloudDrift * 0.3f, 210, 100, 40, 0, cloudCol);
+    drawFlat(800 + cloudDrift * 0.4f, 180, 120, 30, 0, cloudCol);
 
-    // Sol Centrado
+    // Sol Centrado con Ondas de Calor (Mirage)
+    float heatWave = std::sin(t * 5.0f) * 3.5f;
     float sunX = 960;
-    float sunY = 320;
-    drawFlat(sunX, sunY, 160, 160, 0, sunCol);
-    drawFlat(sunX, sunY, 160, 160, 45, sunCol);
+    float sunY = 320 + heatWave;
+    float sunSize = 160 + std::sin(t * 3.0f) * 4.0f;
+    drawFlat(sunX, sunY, sunSize, sunSize, 0, sunCol);
+    drawFlat(sunX, sunY, sunSize, sunSize, 45, sunCol);
     for (int i = 0; i < 12; i++) {
-        float a = i * 30.0f;
+        float a = i * 30.0f + t * 4.0f;
         float rad = a * 3.14159f / 180.0f;
-        drawFlat(sunX + cos(rad)*110, sunY + sin(rad)*110, 40, 15, a, sunCol);
+        float rayLen = 40.0f + std::sin(t * 6.0f + i) * 6.0f;
+        drawFlat(sunX + std::cos(rad)*110, sunY + std::sin(rad)*110, rayLen, 15, a, sunCol);
+    }
+
+    // Buitres en el cielo volando en círculos siniestros
+    if (vultures && max_vultures > 0) {
+        SDL_Color vultureCol = (state == 1) ? SDL_Color{50, 50, 50, 255} : SDL_Color{70, 70, 70, 255};
+        for (int v = 0; v < max_vultures; ++v) {
+            vultures[v].angle += vultures[v].speed;
+            float vx = vultures[v].x + std::cos(vultures[v].angle) * vultures[v].radiusX;
+            float vy = vultures[v].y + std::sin(vultures[v].angle) * vultures[v].radiusY;
+            float flap = std::sin(t * 4.0f + v * 1.5f) * 12.0f;
+            float flightAngle = (std::atan2(std::cos(vultures[v].angle)*vultures[v].radiusY, -std::sin(vultures[v].angle)*vultures[v].radiusX)) * 180.0f / 3.14159f;
+            
+            // Cuerpo del buitre
+            drawFlat(vx, vy, 12, 5, flightAngle, vultureCol);
+            // Alas en 'V'
+            drawFlat(vx - 7, vy - 2, vultures[v].wingSpan, 3, flightAngle - 20.0f + flap, vultureCol);
+            drawFlat(vx + 7, vy - 2, vultures[v].wingSpan, 3, flightAngle + 20.0f - flap, vultureCol);
+        }
     }
     
     // Montañas (Derecha, mas lejos)
@@ -539,6 +738,25 @@ void drawDesertBackground(SDL_Renderer* ren, SDL_Texture* whiteTex, float t, Tum
             }
         }
     }
+
+    // Partículas de polvo del desierto arrastradas por el viento horizontal
+    if (dust && max_dust > 0) {
+        float windSpeedMult = (state == 1) ? (1.5f + tension_prog * 1.5f) : 1.0f;
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+        for (int d = 0; d < max_dust; ++d) {
+            dust[d].x += dust[d].speed * windSpeedMult;
+            if (dust[d].x > 1950.0f) {
+                dust[d].x = -30.0f - (std::rand() % 100);
+                dust[d].y = 650.0f + (std::rand() % 400);
+                dust[d].speed = 4.0f + (std::rand() % 6);
+                dust[d].length = 15.0f + (std::rand() % 35);
+            }
+            Uint8 dustAlpha = (state == 1) ? 50 : 90;
+            SDL_Color dCol = (state == 1) ? SDL_Color{80, 80, 80, dustAlpha} : SDL_Color{160, 155, 145, dustAlpha};
+            drawFlat(dust[d].x, dust[d].y, dust[d].length * (1.0f + (windSpeedMult - 1.0f)*0.5f), dust[d].thickness, -1.5f, dCol);
+        }
+        SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
+    }
 }
 
 int main(int argc, char** argv) {
@@ -589,7 +807,7 @@ int main(int argc, char** argv) {
     int winH = snapshotMode ? 1080 : 600;
     SDL_Window* win = SDL_CreateWindow("Duelo de Vaqueros", SDL_WINDOWPOS_CENTERED,
                                        SDL_WINDOWPOS_CENTERED, winW, winH, winFlags);
-    SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
     SDL_RenderSetLogicalSize(ren, 1920, 1080);
     
     if (!win || !ren) {
@@ -605,6 +823,8 @@ int main(int argc, char** argv) {
     SDL_FillRect(wSurf, NULL, SDL_MapRGB(wSurf->format, 255, 255, 255));
     SDL_Texture* whiteTex = SDL_CreateTextureFromSurface(ren, wSurf);
     SDL_FreeSurface(wSurf);
+    
+    SDL_Texture* targetTex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, 1920, 1080);
 
     if (snapshotMode) {
         Tumbleweed testWeeds[8] = {0};
@@ -634,6 +854,24 @@ int main(int argc, char** argv) {
     const int MAX_WEEDS = 8;
     Tumbleweed tumbleweeds[MAX_WEEDS] = {0};
 
+    const int MAX_VULTURES = 3;
+    Vulture vultures[MAX_VULTURES] = {
+        { 960.0f, 220.0f, 320.0f, 65.0f, 0.008f, 0.0f, 18.0f },
+        { 1120.0f, 260.0f, 240.0f, 50.0f, -0.011f, 1.8f, 14.0f },
+        { 820.0f, 190.0f, 380.0f, 80.0f, 0.006f, 3.5f, 22.0f }
+    };
+
+    const int MAX_DUST = 24;
+    DustParticle dustParticles[MAX_DUST];
+    for (int d = 0; d < MAX_DUST; ++d) {
+        dustParticles[d].x = (float)(std::rand() % 1920);
+        dustParticles[d].y = 650.0f + (float)(std::rand() % 400);
+        dustParticles[d].speed = 4.0f + (float)(std::rand() % 7);
+        dustParticles[d].length = 15.0f + (float)(std::rand() % 35);
+        dustParticles[d].thickness = 2.0f + (float)(std::rand() % 2);
+        dustParticles[d].alpha = 70.0f;
+    }
+
     SDL_AudioSpec wav_spec;
     Uint32 wav_length = 0;
     Uint8 *wav_buffer = nullptr;
@@ -656,26 +894,48 @@ int main(int argc, char** argv) {
     Mix_Chunk* sfxDisparoPC = Mix_LoadWAV("games/sdl2/duelo_vaqueros/assets/disparo.wav");
     Mix_Chunk* bgmTension = Mix_LoadWAV("games/sdl2/duelo_vaqueros/assets/tension.wav");
 
+    // SFX Sintetizados Procedurales de alta calidad
+    Mix_Chunk* sfxHeartbeat = generateToneChunk(120, 55, 12.0f, 0.9f, 0);   // Latido grave profundo
+    Mix_Chunk* sfxTick      = generateToneChunk(45, 900, 30.0f, 0.5f, 1);   // Tic de reloj
+    Mix_Chunk* sfxBell      = generateToneChunk(900, 320, 3.5f, 0.6f, 2);   // Campana de iglesia lejana
+    Mix_Chunk* sfxHammer    = generateToneChunk(60, 1400, 25.0f, 0.8f, 1);  // Martillo / Resistencia mecánica
+
     auto playFireSound = [&]() {
         if (sfxDisparoPC) {
-            Mix_PlayChannel(-1, sfxDisparoPC, 0); // Siempre por la PC
+            Mix_PlayChannel(-1, sfxDisparoPC, 0);
         }
         if (controller_audio > 0 && wav_buffer != nullptr) {
             SDL_ClearQueuedAudio(controller_audio);
             SDL_QueueAudio(controller_audio, wav_buffer, wav_length);
-            SDL_PauseAudioDevice(controller_audio, 0); // Y tambien por el mando si se puede
+            SDL_PauseAudioDevice(controller_audio, 0);
         }
+    };
+
+    // Helper para establecer colores en la barra LED del DualShock 4
+    auto setControllerLED = [](SDL_GameController* gc, Uint8 r, Uint8 g, Uint8 b) {
+        if (!gc) return;
+        SDL_GameControllerSetLED(gc, r, g, b);
     };
 
     Player p1, p2;
     GameState state = STATE_WAITING;
     Uint32 tension_start_time = 0;
     Uint32 tension_duration = 0;
-    
-    int winner = 0; // 0: nadie, 1: J1, 2: J2
+    Uint32 draw_start_time = 0;
+    Uint32 reaction_time_ms = 0;
 
-    // Inicialización y asignación eficiente de mandos (sin escanear sysfs cada frame)
-    auto setupController = [](Player& p, SDL_GameController* gc) {
+    // Estado del impacto cinematográfico (Flashbang + Hit-Stop + Bullet-Time)
+    Uint32 hit_time = 0;
+    int bullet_winner = 0;
+    
+    int winner = 0; // 0: nadie, 1: J1, 2: J2, 3: empate
+
+    // Control de latidos y efectos periódicos en tensión
+    Uint32 last_heartbeat_time = 0;
+    Uint32 last_tick_time = 0;
+
+    // Inicialización y asignación eficiente de mandos
+    auto setupController = [&](Player& p, SDL_GameController* gc) {
         p.gc = gc;
         p.ready = false;
         p.foul = false;
@@ -684,6 +944,7 @@ int main(int argc, char** argv) {
         p.has_accel = SDL_GameControllerHasSensor(gc, SDL_SENSOR_ACCEL);
         if (p.has_gyro) SDL_GameControllerSetSensorEnabled(gc, SDL_SENSOR_GYRO, SDL_TRUE);
         if (p.has_accel) SDL_GameControllerSetSensorEnabled(gc, SDL_SENSOR_ACCEL, SDL_TRUE);
+        setControllerLED(gc, 80, 180, 255); // Azul tenue inicial
     };
 
     auto assignController = [&](int device_index) {
@@ -702,7 +963,6 @@ int main(int argc, char** argv) {
         }
     };
 
-    // Detección inicial una sola vez
     for (int i = 0; i < SDL_NumJoysticks(); ++i) {
         assignController(i);
     }
@@ -732,7 +992,7 @@ int main(int argc, char** argv) {
                 }
             } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
                 if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B) {
-                    running = false; // Circulo para salir
+                    running = false;
                 }
                 
                 if (state == STATE_WAITING && ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
@@ -740,14 +1000,27 @@ int main(int argc, char** argv) {
                     SDL_JoystickID id1 = p1.gc ? SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(p1.gc)) : -1;
                     SDL_JoystickID id2 = p2.gc ? SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(p2.gc)) : -1;
                     
-                    if (id == id1 && isMatchingPose(p1.accel, p1.cal_down, 0.5f)) p1.ready = true;
-                    if (id == id2 && isMatchingPose(p2.accel, p2.cal_down, 0.5f)) p2.ready = true;
+                    if (id == id1 && isMatchingPose(p1.accel, p1.cal_down, 0.5f)) {
+                        p1.ready = true;
+                        setControllerLED(p1.gc, 0, 255, 80); // Verde listo
+                        if (sfxHammer) Mix_PlayChannel(-1, sfxHammer, 0);
+                    }
+                    if (id == id2 && isMatchingPose(p2.accel, p2.cal_down, 0.5f)) {
+                        p2.ready = true;
+                        setControllerLED(p2.gc, 0, 255, 80); // Verde listo
+                        if (sfxHammer) Mix_PlayChannel(-1, sfxHammer, 0);
+                    }
                 }
                 
                 if (state == STATE_RESULT && ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
                     state = STATE_WAITING;
                     p1.ready = p2.ready = p1.foul = p2.foul = false;
                     winner = 0;
+                    reaction_time_ms = 0;
+                    hit_time = 0;
+                    bullet_winner = 0;
+                    setControllerLED(p1.gc, 80, 180, 255);
+                    setControllerLED(p2.gc, 80, 180, 255);
                 }
             }
         }
@@ -764,12 +1037,9 @@ int main(int argc, char** argv) {
 
         auto checkDrawn = [](Player& p) {
             if (!p.gc) return;
-            // Movimiento brusco del giroscopio (Subimos de 2.0 a 4.0 para que no sea tan sensible)
             if (std::abs(p.gyro[0]) > 4.0f || std::abs(p.gyro[1]) > 4.0f || std::abs(p.gyro[2]) > 4.0f) {
                 p.has_drawn = true;
             }
-            // O si la gravedad coincide con la posicion apuntando al frente
-            // Tolerancia a 0.8f (antes 0.5f) exige que el mando esté mucho más cerca de la horizontal ideal
             if (isMatchingPose(p.accel, p.cal_forward, 0.8f)) {
                 p.has_drawn = true;
             }
@@ -783,8 +1053,19 @@ int main(int argc, char** argv) {
         readSensors(p1);
         readSensors(p2);
 
+        // Feedback de resistencia mecánica previa al disparar (sensación de amartillado)
+        auto handleTriggerResistance = [&](Player& p) {
+            if (!p.gc) return;
+            Sint16 triggerVal = SDL_GameControllerGetAxis(p.gc, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+            if (triggerVal > 4000 && triggerVal < 9000) {
+                // Micro-resistencia / click antes del punto de quiebre
+                SDL_GameControllerRumble(p.gc, 0x1800, 0x0000, 25);
+            }
+        };
+        handleTriggerResistance(p1);
+        handleTriggerResistance(p2);
+
         if (state == STATE_WAITING) {
-            // Reiniciamos el estado de desenfunde mientras esperamos
             p1.has_drawn = false;
             p2.has_drawn = false;
             
@@ -800,15 +1081,40 @@ int main(int argc, char** argv) {
             if (listos_para_empezar) {
                 state = STATE_TENSION;
                 tension_start_time = SDL_GetTicks();
-                tension_duration = 2000 + (std::rand() % 4000);
+                tension_duration = 2400 + (std::rand() % 4200);
+                last_heartbeat_time = tension_start_time;
+                last_tick_time = tension_start_time;
                 if (bgmTension) Mix_PlayChannel(1, bgmTension, -1);
+                if (sfxBell) Mix_PlayChannel(2, sfxBell, 0); // Campana de iglesia marcando el inicio
             }
         }
         else if (state == STATE_TENSION) {
             checkDrawn(p1);
             checkDrawn(p2);
+
+            Uint32 elapsedTension = SDL_GetTicks() - tension_start_time;
+
+            // LED de los mandos: Rojo tenue misterioso y FIJO (no cambia con el tiempo para NO delatar el duelo)
+            setControllerLED(p1.gc, 180, 20, 20);
+            setControllerLED(p2.gc, 180, 20, 20);
+
+            // Latido cardíaco en el mando: ritmo constante y misterioso cada 850ms (no se acelera para no delatar)
+            if (SDL_GetTicks() - last_heartbeat_time > 850) {
+                last_heartbeat_time = SDL_GetTicks();
+                // Doble pulso cardíaco ('tum-tum')
+                Uint16 rumblePower = 0x4500;
+                if (p1.gc) SDL_GameControllerRumble(p1.gc, rumblePower, rumblePower / 2, 60);
+                if (p2.gc) SDL_GameControllerRumble(p2.gc, rumblePower, rumblePower / 2, 60);
+                if (sfxHeartbeat) Mix_PlayChannel(-1, sfxHeartbeat, 0);
+            }
+
+            // Tic-tac de reloj mecánico cada 500ms
+            if (SDL_GetTicks() - last_tick_time > 500) {
+                last_tick_time = SDL_GetTicks();
+                if (sfxTick) Mix_PlayChannel(-1, sfxTick, 0);
+            }
             
-            // En tension, moverse (desenfundar) o disparar es falta
+            // En tensión, moverse (desenfundar) o disparar es falta
             bool p1_foul = p1.has_drawn || hasPulledTrigger(p1);
             bool p2_foul = p2.has_drawn || hasPulledTrigger(p2);
             
@@ -816,12 +1122,24 @@ int main(int argc, char** argv) {
                 playFireSound();
                 Mix_HaltChannel(1);
                 state = STATE_RESULT;
-                if (p1_foul) { p1.foul = true; winner = 2; }
-                else { p2.foul = true; winner = 1; }
-            } else if (SDL_GetTicks() - tension_start_time > tension_duration) {
+                if (p1_foul) { 
+                    p1.foul = true; winner = 2; 
+                    setControllerLED(p1.gc, 255, 0, 0);
+                    setControllerLED(p2.gc, 0, 255, 100);
+                } else { 
+                    p2.foul = true; winner = 1; 
+                    setControllerLED(p2.gc, 255, 0, 0);
+                    setControllerLED(p1.gc, 0, 255, 100);
+                }
+            } else if (elapsedTension > tension_duration) {
                 state = STATE_DRAW;
-                if (p1.gc) SDL_GameControllerRumble(p1.gc, 0xFFFF, 0xFFFF, 400);
-                if (p2.gc) SDL_GameControllerRumble(p2.gc, 0xFFFF, 0xFFFF, 400);
+                draw_start_time = SDL_GetTicks();
+                // Destello Blanco Cegador en los mandos al momento del "DRAW"
+                setControllerLED(p1.gc, 255, 255, 255);
+                setControllerLED(p2.gc, 255, 255, 255);
+                // Vibración de aviso de desenfunde
+                if (p1.gc) SDL_GameControllerRumble(p1.gc, 0xFFFF, 0xFFFF, 180);
+                if (p2.gc) SDL_GameControllerRumble(p2.gc, 0xFFFF, 0xFFFF, 180);
                 Mix_HaltChannel(1);
             }
         }
@@ -829,24 +1147,60 @@ int main(int argc, char** argv) {
             checkDrawn(p1);
             checkDrawn(p2);
             
-            // Para disparar, TIENE que haber desenfundado (has_drawn) Y apretar gatillo
             bool p1_fire = p1.has_drawn && hasPulledTrigger(p1);
             bool p2_fire = p2.has_drawn && hasPulledTrigger(p2);
             
-            if (p1_fire && !p2_fire) {
-                playFireSound(); winner = 1; state = STATE_RESULT;
-            } else if (p2_fire && !p1_fire) {
-                playFireSound(); winner = 2; state = STATE_RESULT;
-            } else if (p1_fire && p2_fire) {
-                playFireSound(); winner = 3; state = STATE_RESULT; 
+            if (p1_fire || p2_fire) {
+                playFireSound();
+                hit_time = SDL_GetTicks();
+                reaction_time_ms = hit_time - draw_start_time;
+
+                // Retroceso seco / Kick violento en el gatillo (120ms a tope)
+                if (p1_fire && p1.gc) SDL_GameControllerRumble(p1.gc, 0xFFFF, 0xFFFF, 120);
+                if (p2_fire && p2.gc) SDL_GameControllerRumble(p2.gc, 0xFFFF, 0xFFFF, 120);
+
+                if (p1_fire && !p2_fire) {
+                    winner = 1; bullet_winner = 1;
+                    setControllerLED(p1.gc, 0, 255, 100);
+                    setControllerLED(p2.gc, 255, 20, 20);
+                } else if (p2_fire && !p1_fire) {
+                    winner = 2; bullet_winner = 2;
+                    setControllerLED(p2.gc, 0, 255, 100);
+                    setControllerLED(p1.gc, 255, 20, 20);
+                } else {
+                    winner = 3; bullet_winner = 3;
+                    setControllerLED(p1.gc, 255, 200, 0);
+                    setControllerLED(p2.gc, 255, 200, 0);
+                }
+                state = STATE_SHOWDOWN; // Entra a la secuencia cinematográfica
+            }
+        }
+        else if (state == STATE_SHOWDOWN) {
+            Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
+            if (elapsedShowdown >= 1700) { // Tras 1.7s de clímax, pasa al menú de resultados
+                state = STATE_RESULT;
             }
         }
 
         // --- RENDERIZADO NEO-BRUTALISTA ---
         float currTime = SDL_GetTicks() * 0.001f;
-        drawDesertBackground(ren, whiteTex, currTime, tumbleweeds, 8, state);
+        
+        float tension_prog = 0.0f;
+        if (state == STATE_TENSION || state == STATE_DRAW) {
+            float elapsed = (float)(state == STATE_TENSION ? (SDL_GetTicks() - tension_start_time) : tension_duration);
+            tension_prog = (-cos(elapsed * 0.0025f) + 1.0f) * 0.5f; 
+            tension_prog = tension_prog * tension_prog;
+        } else if (state == STATE_SHOWDOWN) {
+            tension_prog = 1.0f;
+        }
 
-        // Determinar fases de animacion de los vaqueros
+        if (targetTex) {
+            SDL_SetRenderTarget(ren, targetTex);
+        }
+
+        drawDesertBackground(ren, whiteTex, currTime, tumbleweeds, 8, state == STATE_SHOWDOWN ? 2 : state, vultures, 3, dustParticles, 24, tension_prog);
+
+        // Determinar fases de animación de los vaqueros
         int phaseP1 = 0;
         int phaseP2 = 0;
         
@@ -857,6 +1211,19 @@ int main(int argc, char** argv) {
         } else if (state == STATE_DRAW) {
             phaseP1 = p1.has_drawn ? 2 : 1; 
             phaseP2 = p2.has_drawn ? 2 : 1;
+        } else if (state == STATE_SHOWDOWN) {
+            Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
+            if (elapsedShowdown < 1350) {
+                // Durante el Bullet-Time: el ganador dispara (pose 2) y el derrotado aún está en tensión/desenfundando (pose 1)
+                phaseP1 = (winner == 1) ? 2 : 1;
+                phaseP2 = (winner == 2) ? 2 : 1;
+                if (winner == 3) { phaseP1 = 2; phaseP2 = 2; }
+            } else {
+                // Impacto final: el rival cae derrotado al piso (pose 3)
+                phaseP1 = (winner == 1) ? 2 : 3;
+                phaseP2 = (winner == 2) ? 2 : 3;
+                if (winner == 3) { phaseP1 = 3; phaseP2 = 3; }
+            }
         } else if (state == STATE_RESULT) {
             if (p1.foul) { phaseP1 = 4; phaseP2 = 0; }
             else if (p2.foul) { phaseP1 = 0; phaseP2 = 4; }
@@ -866,22 +1233,103 @@ int main(int argc, char** argv) {
         }
 
         // Dibujar Vaqueros Brutalistas
-        drawCowboy(ren, whiteTex, 480, 490, phaseP1, false, currTime);
-        drawCowboy(ren, whiteTex, 1440, 490, phaseP2, true, currTime);
+        drawCowboy(ren, whiteTex, 480, 490, phaseP1, false, currTime, tension_prog);
+        drawCowboy(ren, whiteTex, 1440, 490, phaseP2, true, currTime, tension_prog);
 
-        // Utilidad para dibujar cajas brutalistas
+        // SECUENCIA CINEMÁTICA: BULLET-TIME ARTESANAL DE ALTA DEFINICIÓN
+        if (state == STATE_SHOWDOWN && bullet_winner > 0) {
+            Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
+            
+            // FASE 2 DEL CLÍMAX: Vuelo balístico en cámara lenta (90ms a 1400ms)
+            if (elapsedShowdown >= 90 && elapsedShowdown < 1400) {
+                float bulletProg = (float)(elapsedShowdown - 90) / 1300.0f; // 0.0 a 1.0 suave
+                float startX = (bullet_winner == 1) ? 570.0f : 1350.0f;
+                float targetX = (bullet_winner == 1) ? 1410.0f : 510.0f;
+                float currentBulletX = startX + (targetX - startX) * bulletProg;
+                float bulletY = 460.0f;
+
+                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+
+                // 1. Estela de vacío / líneas de velocidad hipersónicas
+                float trailLen = 320.0f * (1.0f - std::abs(bulletProg - 0.5f) * 0.4f);
+                float trailStart = (bullet_winner == 1) ? (currentBulletX - trailLen) : currentBulletX;
+                SDL_SetRenderDrawColor(ren, 255, 235, 70, 200);
+                SDL_Rect tracerCore = { (int)trailStart, (int)(bulletY - 2), (int)trailLen, 4 };
+                SDL_RenderFillRect(ren, &tracerCore);
+                SDL_SetRenderDrawColor(ren, 255, 255, 255, 240);
+                SDL_Rect tracerWhite = { (int)trailStart, (int)(bulletY - 1), (int)trailLen, 2 };
+                SDL_RenderFillRect(ren, &tracerWhite);
+
+                // 2. Ondas de choque supersónicas cónicas
+                for (int c = 1; c <= 3; ++c) {
+                    float shockOffset = (float)c * 70.0f;
+                    float shockX = (bullet_winner == 1) ? (currentBulletX - shockOffset) : (currentBulletX + shockOffset);
+                    if ((bullet_winner == 1 && shockX > startX) || (bullet_winner == 2 && shockX < startX)) {
+                        float shockH = 35.0f + (float)c * 15.0f;
+                        SDL_SetRenderDrawColor(ren, 240, 240, 240, (Uint8)(170 - c * 40));
+                        SDL_Rect shockR = { (int)(shockX - 3), (int)(bulletY - shockH / 2), 6, (int)shockH };
+                        SDL_RenderDrawRect(ren, &shockR);
+                    }
+                }
+
+                // 3. Proyectil dorado con punta afilada y reflejo metálico
+                SDL_SetRenderDrawColor(ren, 245, 205, 45, 255);
+                SDL_Rect bulletBody = { (int)(currentBulletX - 12), (int)(bulletY - 5), 24, 10 };
+                SDL_RenderFillRect(ren, &bulletBody);
+                SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
+                SDL_RenderDrawRect(ren, &bulletBody);
+                SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
+                SDL_Rect bulletHighlight = { (int)(currentBulletX - 10), (int)(bulletY - 3), 20, 3 };
+                SDL_RenderFillRect(ren, &bulletHighlight);
+
+                // 4. Sombrero del rival empezando a desestabilizarse por el aire que corta
+                if (bulletProg > 0.82f) {
+                    float hatShake = std::sin((float)elapsedShowdown * 0.05f) * 8.0f;
+                    float rivalX = (bullet_winner == 1) ? 1440.0f : 480.0f;
+                    SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
+                    SDL_Rect alertMark = { (int)(rivalX - 4), 360 + (int)hatShake, 8, 22 };
+                    SDL_RenderFillRect(ren, &alertMark);
+                }
+
+                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
+            }
+            
+            // FASE 3 DEL CLÍMAX: El impacto brutal y el sombrero volando por los aires (1350ms a 1700ms)
+            if (elapsedShowdown >= 1350) {
+                float hitProg = (float)(elapsedShowdown - 1350) / 350.0f; // 0.0 a 1.0
+                float rivalX = (bullet_winner == 1) ? 1440.0f : 480.0f;
+                float hatFlyX = rivalX + ((bullet_winner == 1) ? (hitProg * 120.0f) : (-hitProg * 120.0f));
+                float hatFlyY = 380.0f - std::sin(hitProg * 3.14159f) * 110.0f + hitProg * 40.0f;
+                float hatAngle = (bullet_winner == 1) ? (hitProg * 140.0f) : (-hitProg * 140.0f);
+
+                // Dibujar sombrero volando en el aire tras el impacto
+                SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
+                SDL_Rect flyBrim = { (int)(hatFlyX - 45), (int)(hatFlyY - 6), 90, 12 };
+                SDL_RenderFillRect(ren, &flyBrim);
+                SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
+                SDL_RenderDrawRect(ren, &flyBrim);
+
+                // Polvo de impacto levantado
+                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(ren, 200, 190, 170, (Uint8)(220 * (1.0f - hitProg)));
+                for (int p = 0; p < 6; ++p) {
+                    SDL_Rect dustP = { (int)(rivalX + (p - 3) * 22), (int)(560 - hitProg * 35), 18, 18 };
+                    SDL_RenderFillRect(ren, &dustP);
+                }
+                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
+            }
+        }
+
+        // Helper para cajas neo-brutalistas
         auto drawBrutalistBox = [&](int x, int y, int w, int h, bool filled) {
-            // Sombra
             SDL_SetRenderDrawColor(ren, 10, 10, 10, 255);
             SDL_Rect shadow = {x + 16, y + 16, w, h};
             SDL_RenderFillRect(ren, &shadow);
             
-            // Fondo
             SDL_SetRenderDrawColor(ren, filled ? 10 : 250, filled ? 10 : 250, filled ? 10 : 250, 255);
             SDL_Rect box = {x, y, w, h};
             SDL_RenderFillRect(ren, &box);
             
-            // Borde
             SDL_SetRenderDrawColor(ren, 10, 10, 10, 255);
             for (int b = 0; b < 6; ++b) {
                 SDL_Rect border = {x + b, y + b, w - b*2, h - b*2};
@@ -890,20 +1338,19 @@ int main(int argc, char** argv) {
         };
 
         if (state == STATE_WAITING) {
-            renderText(ren, font, "DUELO DE VAQUEROS", 960, 80, {10, 10, 10, 255}, true, 1.2f);
-            
+            renderText(ren, font, "DUELO DE VAQUEROS", 960, 60, {10, 10, 10, 255}, true, 1.2f);
+
             auto drawPlayerText = [&](Player& p, int cx, std::string label) {
                 if (!p.gc) return;
                 bool correctPose = isMatchingPose(p.accel, p.cal_down, 0.5f);
                 SDL_Color textColor = p.ready ? SDL_Color{50, 200, 50, 255} : SDL_Color{10, 10, 10, 255};
                 
-                renderText(ren, font, label, cx, 140, {10, 10, 10, 255}, true, 0.7f);
+                renderText(ren, font, label, cx, 180, {10, 10, 10, 255}, true, 0.6f);
                 
                 std::string status = "APUNTA ABAJO";
                 if (p.ready) status = "LISTO";
                 else if (correctPose) status = "PULSA X";
                 
-                // Dibujar caja de fondo para el texto debajo de los pies
                 drawBrutalistBox(cx - 140, 740, 280, 65, false);
                 renderText(ren, font, status, cx, 772, textColor, true, 0.45f);
             };
@@ -915,39 +1362,148 @@ int main(int argc, char** argv) {
                 renderText(ren, font, "ESPERANDO JUGADOR 2...", 1440, 772, {100, 100, 100, 255}, true, 0.45f);
             }
         }
-        else if (state == STATE_TENSION) {
-            // Sin texto, los vaqueros hablan por si solos
+
+        // BARRAS CINEMASCOPE 2.39:1 (LETTERBOX): Máximo formato cinematográfico en Tensión y Showdown
+        if (state == STATE_TENSION || state == STATE_DRAW || state == STATE_SHOWDOWN) {
+            int barHeight = (int)(95.0f * tension_prog);
+            SDL_SetRenderDrawColor(ren, 10, 10, 10, 255);
+            SDL_Rect topBar = { 0, 0, 1920, barHeight };
+            SDL_Rect bottomBar = { 0, 1080 - barHeight, 1920, barHeight };
+            SDL_RenderFillRect(ren, &topBar);
+            SDL_RenderFillRect(ren, &bottomBar);
         }
-        else if (state == STATE_DRAW) {
-            // Flashbang gigante visual para reaccionar (pero sin texto)
-        }
-        else if (state == STATE_RESULT) {
-            // Tarjeta central brutalista para el resultado (mas arriba para ver los cuerpos)
-            drawBrutalistBox(460, 80, 1000, 260, false);
-            
-            std::string mainText = "";
-            std::string subText = "";
-            
-            if (winner == 1) {
-                mainText = "¡GANA J1!";
-                if (p2.foul) subText = "EL JUGADOR 2 DISPARO ANTES (FALTA)";
-            } else if (winner == 2) {
-                mainText = "¡GANA J2!";
-                if (p1.foul) subText = "EL JUGADOR 1 DISPARO ANTES (FALTA)";
-            } else {
-                mainText = "¡EMPATE!";
+
+        if (targetTex) {
+            SDL_SetRenderTarget(ren, NULL);
+            SDL_SetRenderDrawColor(ren, 15, 15, 15, 255);
+            SDL_RenderClear(ren);
+
+            // CÁMARA DINÁMICA: En Showdown la cámara sigue a la bala con un plano corto
+            float zoom = 1.0f + (tension_prog * 0.35f);
+            float focusX = 960.0f;
+            float focusY = 540.0f;
+
+            if (state == STATE_SHOWDOWN && bullet_winner > 0) {
+                Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
+                zoom = 1.45f;
+                if (elapsedShowdown < 1400) {
+                    float bProg = (float)elapsedShowdown / 1400.0f;
+                    float bX = (bullet_winner == 1) ? (570.0f + 840.0f * bProg) : (1350.0f - 840.0f * bProg);
+                    focusX = bX;
+                    focusY = 480.0f;
+                } else {
+                    focusX = (bullet_winner == 1) ? 1440.0f : 480.0f;
+                    focusY = 500.0f;
+                }
             }
-            
-            renderText(ren, font, mainText, 960, 170, {10, 10, 10, 255}, true, 2.0f);
-            if (!subText.empty()) renderText(ren, font, subText, 960, 260, {80, 80, 80, 255}, true, 0.4f);
-            
-            renderText(ren, font, "X: Revancha  |  Circulo: Salir", 960, 310, {10, 10, 10, 255}, true, 0.4f);
+
+            int w = (int)(1920.0f / zoom);
+            int h = (int)(1080.0f / zoom);
+            int srcX = (int)(focusX - w / 2.0f);
+            int srcY = (int)(focusY - h / 2.0f);
+            if (srcX < 0) srcX = 0;
+            if (srcX + w > 1920) srcX = 1920 - w;
+            if (srcY < 0) srcY = 0;
+            if (srcY + h > 1080) srcY = 1080 - h;
+
+            SDL_Rect src = { srcX, srcY, w, h };
+            SDL_RenderCopy(ren, targetTex, &src, NULL);
+        }
+
+        // FASE 1 DEL CLÍMAX: HIT-STOP CON INVERSIÓN DE COLOR NEGRO Y RELÁMPAGO (Primeros 90ms)
+        if (state == STATE_SHOWDOWN) {
+            Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
+            if (elapsedShowdown < 90) {
+                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+                SDL_SetRenderDrawColor(ren, 10, 10, 10, 240);
+                SDL_Rect fullScreen = { 0, 0, 1920, 1080 };
+                SDL_RenderFillRect(ren, &fullScreen);
+
+                SDL_SetRenderDrawColor(ren, 255, 235, 70, 255);
+                float flashOriginX = (bullet_winner == 1) ? 620.0f : 1300.0f;
+                SDL_Rect flashSpike = { (int)flashOriginX, 440, 140, 14 };
+                SDL_RenderFillRect(ren, &flashSpike);
+                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
+            }
+        }
+
+        // INTERFAZ DE RESULTADO DINÁMICA, MODERNA Y ELEGANTE (Renderizada en pantalla limpia sin zoom)
+        if (state == STATE_RESULT) {
+            // Entrada suave y limpia desde arriba
+            Uint32 resElapsed = SDL_GetTicks() - (hit_time + 1700);
+            float animProg = std::min(1.0f, (float)resElapsed / 350.0f);
+            float smoothT = animProg * (2.0f - animProg); // Ease-out cuadrático
+            int bannerY = (int)(25.0f - (1.0f - smoothT) * 40.0f);
+
+            int cardW = 920;
+            int cardH = 190;
+            int cardX = 960 - cardW / 2;
+
+            // Sombra brutalista de la tarjeta
+            SDL_SetRenderDrawColor(ren, 15, 15, 15, 255);
+            SDL_Rect sR = { cardX + 12, bannerY + 12, cardW, cardH };
+            SDL_RenderFillRect(ren, &sR);
+
+            // Fondo blanco nítido
+            SDL_SetRenderDrawColor(ren, 250, 250, 250, 255);
+            SDL_Rect bR = { cardX, bannerY, cardW, cardH };
+            SDL_RenderFillRect(ren, &bR);
+
+            // Borde exterior negro grueso brutalista
+            SDL_SetRenderDrawColor(ren, 15, 15, 15, 255);
+            for (int b = 0; b < 4; ++b) {
+                SDL_Rect bor = { cardX + b, bannerY + b, cardW - b * 2, cardH - b * 2 };
+                SDL_RenderDrawRect(ren, &bor);
+            }
+
+            // Franja superior de acento con color del ganador
+            SDL_Color headerCol = (winner == 1) ? SDL_Color{35, 160, 60, 255} : ((winner == 2) ? SDL_Color{210, 45, 45, 255} : SDL_Color{220, 160, 20, 255});
+            SDL_SetRenderDrawColor(ren, headerCol.r, headerCol.g, headerCol.b, 255);
+            SDL_Rect accentBar = { cardX + 4, bannerY + 4, cardW - 8, 8 };
+            SDL_RenderFillRect(ren, &accentBar);
+
+            std::string mainTitle = "";
+            std::string subTitle = "";
+
+            if (winner == 1) {
+                mainTitle = "¡VICTORIA: JUGADOR 1!";
+                if (p2.foul) subTitle = "FALTA: EL JUGADOR 2 SE ADELANTÓ";
+                else if (reaction_time_ms > 0) subTitle = "TIEMPO DE REACCIÓN: " + std::to_string(reaction_time_ms) + " MS";
+            } else if (winner == 2) {
+                mainTitle = "¡VICTORIA: JUGADOR 2!";
+                if (p1.foul) subTitle = "FALTA: EL JUGADOR 1 SE ADELANTÓ";
+                else if (reaction_time_ms > 0) subTitle = "TIEMPO DE REACCIÓN: " + std::to_string(reaction_time_ms) + " MS";
+            } else {
+                mainTitle = "¡EMPATE TÉCNICO!";
+                subTitle = "DISPARO SIMULTÁNEO";
+            }
+
+            // Título perfectamente proporcionado y centrado (escala 0.46f que entra con holgura)
+            renderText(ren, font, mainTitle, 960, bannerY + 48, {15, 15, 15, 255}, true, 0.46f);
+
+            // Insignia / Caja pequeña para el tiempo de reacción (bien espaciada)
+            if (!subTitle.empty()) {
+                int tagW = 460;
+                int tagH = 38;
+                int tagX = 960 - tagW / 2;
+                int tagY = bannerY + 92;
+
+                SDL_SetRenderDrawColor(ren, 240, 240, 242, 255);
+                SDL_Rect tagR = { tagX, tagY, tagW, tagH };
+                SDL_RenderFillRect(ren, &tagR);
+                SDL_SetRenderDrawColor(ren, 25, 25, 25, 255);
+                SDL_RenderDrawRect(ren, &tagR);
+
+                SDL_Color subColor = (p1.foul || p2.foul) ? SDL_Color{180, 40, 40, 255} : SDL_Color{30, 95, 185, 255};
+                renderText(ren, font, subTitle, 960, tagY + 19, subColor, true, 0.28f);
+            }
+
+            // Pie con instrucciones limpias
+            renderText(ren, font, "[X] Revancha   •   [O] Salir", 960, bannerY + 158, {90, 90, 90, 255}, true, 0.26f);
         }
 
         SDL_RenderPresent(ren);
 
-        // VSync ya sincroniza a la tasa de refresco del monitor (60 Hz).
-        // Si el render termina rápido y VSync no bloqueó, este delay mínimo protege la CPU sin generar parones
         Uint32 frameElapsed = SDL_GetTicks() - frameStart;
         if (frameElapsed < 16) {
             SDL_Delay(1);
@@ -962,11 +1518,16 @@ int main(int argc, char** argv) {
 
     if (font) TTF_CloseFont(font);
     if (whiteTex) SDL_DestroyTexture(whiteTex);
+    if (targetTex) SDL_DestroyTexture(targetTex);
     
     if (wav_buffer) SDL_FreeWAV(wav_buffer);
     if (controller_audio > 0) SDL_CloseAudioDevice(controller_audio);
     if (sfxDisparoPC) Mix_FreeChunk(sfxDisparoPC);
     if (bgmTension) Mix_FreeChunk(bgmTension);
+    if (sfxHeartbeat) { std::free(sfxHeartbeat->abuf); std::free(sfxHeartbeat); }
+    if (sfxTick) { std::free(sfxTick->abuf); std::free(sfxTick); }
+    if (sfxBell) { std::free(sfxBell->abuf); std::free(sfxBell); }
+    if (sfxHammer) { std::free(sfxHammer->abuf); std::free(sfxHammer); }
     Mix_CloseAudio();
 
     if (p1.gc) SDL_GameControllerClose(p1.gc);
