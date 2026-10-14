@@ -39,6 +39,18 @@ static Mix_Chunk* generateToneChunk(int durationMs, int freq, float decay = 5.0f
         } else if (type == 3) { // Silbido del viento
             float noise = ((float)(std::rand() % 2000) / 1000.0f) - 1.0f;
             sample = noise * (0.3f + 0.2f * std::sin(t * 3.0f));
+        } else if (type == 4) { // Sub-drop time warp / cámara lenta cinematográfica
+            float curFreq = (float)freq * (1.0f - progress * 0.72f);
+            sample = std::sin(2.0f * 3.14159f * curFreq * t) + 
+                     0.45f * std::sin(2.0f * 3.14159f * (curFreq * 0.5f) * t);
+        } else if (type == 5) { // Silbido balístico supersónico en cámara lenta con efecto Doppler
+            float tremolo = 0.65f + 0.35f * std::sin(2.0f * 3.14159f * 18.0f * t);
+            float curFreq = (float)freq * (1.0f - progress * 0.28f);
+            sample = std::sin(2.0f * 3.14159f * curFreq * t) * tremolo;
+        } else if (type == 6) { // Impacto demoledor / sombrerazo seco y contundente
+            float noise = ((float)(std::rand() % 2000) / 1000.0f) - 1.0f;
+            float punch = std::sin(2.0f * 3.14159f * 65.0f * t);
+            sample = noise * 0.55f * std::exp(-progress * 18.0f) + punch * 0.75f;
         }
 
         float finalVal = sample * env * volume * 32760.0f;
@@ -141,7 +153,7 @@ void renderText(SDL_Renderer* ren, TTF_Font* font, const std::string& text, int 
     SDL_RenderCopy(ren, tex, nullptr, &dst);
 }
 
-void drawCowboy(SDL_Renderer* ren, SDL_Texture* whiteTex, float cx, float cy, int state_phase, bool flip, float t, float tension_prog = 0.0f) {
+void drawCowboy(SDL_Renderer* ren, SDL_Texture* whiteTex, float cx, float cy, int state_phase, bool flip, float t, float tension_prog = 0.0f, bool showGroundHat = true) {
     const float S = 1.35f; // Escala imponente original
     
     // Desfase único por jugador (usando 'flip') para que P1 y P2 no respiren ni parpadeen como robots clonados
@@ -259,10 +271,12 @@ void drawCowboy(SDL_Renderer* ren, SDL_Texture* whiteTex, float cx, float cy, in
         }
 
         // Sombrero volado a un costado mecido por el viento
-        float hatRock = std::sin(t * 3.0f) * 4.0f;
-        drawR(-124, 142, 135, 12, 20.0f + hatRock, cWhite, true, 3);
-        drawR(-120, 124, 50, 34, 20.0f + hatRock, cWhite, true, 3);
-        drawR(-122, 136, 50, 12, 20.0f + hatRock, cHatBand, true, 2);
+        if (showGroundHat) {
+            float hatRock = std::sin(t * 3.0f) * 4.0f;
+            drawR(-124, 142, 135, 12, 20.0f + hatRock, cWhite, true, 3);
+            drawR(-120, 124, 50, 34, 20.0f + hatRock, cWhite, true, 3);
+            drawR(-122, 136, 50, 12, 20.0f + hatRock, cHatBand, true, 2);
+        }
 
         // Revólver caído en el suelo largando un hilito de humo
         drawR(118, 146, 38, 14, -15.0f, cWhite, true, 2);
@@ -899,6 +913,9 @@ int main(int argc, char** argv) {
     Mix_Chunk* sfxTick      = generateToneChunk(45, 900, 30.0f, 0.5f, 1);   // Tic de reloj
     Mix_Chunk* sfxBell      = generateToneChunk(900, 320, 3.5f, 0.6f, 2);   // Campana de iglesia lejana
     Mix_Chunk* sfxHammer    = generateToneChunk(60, 1400, 25.0f, 0.8f, 1);  // Martillo / Resistencia mecánica
+    Mix_Chunk* sfxTimeWarp  = generateToneChunk(1850, 180, 1.2f, 0.95f, 4);  // Sub-drop cinematográfico de cámara lenta
+    Mix_Chunk* sfxBulletFly = generateToneChunk(1700, 1400, 1.0f, 0.75f, 5); // Silbido supersónico / zumbido Doppler
+    Mix_Chunk* sfxImpact    = generateToneChunk(450, 75, 7.5f, 1.0f, 6);     // Impacto demoledor y sombrerazo seco
 
     auto playFireSound = [&]() {
         if (sfxDisparoPC) {
@@ -927,6 +944,7 @@ int main(int argc, char** argv) {
     // Estado del impacto cinematográfico (Flashbang + Hit-Stop + Bullet-Time)
     Uint32 hit_time = 0;
     int bullet_winner = 0;
+    bool impact_played = false;
     
     int winner = 0; // 0: nadie, 1: J1, 2: J2, 3: empate
 
@@ -975,8 +993,26 @@ int main(int argc, char** argv) {
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_QUIT) {
                 running = false;
-            } else if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE) {
-                running = false;
+            } else if (ev.type == SDL_KEYDOWN) {
+                if (ev.key.keysym.sym == SDLK_ESCAPE) {
+                    running = false;
+                } else if (ev.key.keysym.sym == SDLK_SPACE || ev.key.keysym.sym == SDLK_RETURN) {
+                    if (state == STATE_WAITING) {
+                        p1.ready = true;
+                        if (p2.gc) p2.ready = true;
+                        if (sfxHammer) Mix_PlayChannel(-1, sfxHammer, 0);
+                    } else if (state == STATE_RESULT) {
+                        state = STATE_WAITING;
+                        p1.ready = p2.ready = p1.foul = p2.foul = false;
+                        winner = 0;
+                        reaction_time_ms = 0;
+                        hit_time = 0;
+                        bullet_winner = 0;
+                        impact_played = false;
+                        setControllerLED(p1.gc, 80, 180, 255);
+                        setControllerLED(p2.gc, 80, 180, 255);
+                    }
+                }
             } else if (ev.type == SDL_CONTROLLERDEVICEADDED) {
                 assignController(ev.cdevice.which);
             } else if (ev.type == SDL_CONTROLLERDEVICEREMOVED) {
@@ -1019,6 +1055,7 @@ int main(int argc, char** argv) {
                     reaction_time_ms = 0;
                     hit_time = 0;
                     bullet_winner = 0;
+                    impact_played = false;
                     setControllerLED(p1.gc, 80, 180, 255);
                     setControllerLED(p2.gc, 80, 180, 255);
                 }
@@ -1154,6 +1191,11 @@ int main(int argc, char** argv) {
                 playFireSound();
                 hit_time = SDL_GetTicks();
                 reaction_time_ms = hit_time - draw_start_time;
+                impact_played = false;
+
+                // Clímax cinematográfico: sub-drop de cámara lenta y silbido balístico
+                if (sfxTimeWarp) Mix_PlayChannel(3, sfxTimeWarp, 0);
+                if (sfxBulletFly) Mix_PlayChannel(4, sfxBulletFly, 0);
 
                 // Retroceso seco / Kick violento en el gatillo (120ms a tope)
                 if (p1_fire && p1.gc) SDL_GameControllerRumble(p1.gc, 0xFFFF, 0xFFFF, 120);
@@ -1172,12 +1214,27 @@ int main(int argc, char** argv) {
                     setControllerLED(p1.gc, 255, 200, 0);
                     setControllerLED(p2.gc, 255, 200, 0);
                 }
-                state = STATE_SHOWDOWN; // Entra a la secuencia cinematográfica
+                state = STATE_SHOWDOWN; // Entra a la secuencia cinematográfica épica
             }
         }
         else if (state == STATE_SHOWDOWN) {
             Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
-            if (elapsedShowdown >= 1700) { // Tras 1.7s de clímax, pasa al menú de resultados
+            
+            // Vibración háptica sub-grave continua en los mandos durante el vuelo de la bala
+            if (elapsedShowdown >= 100 && elapsedShowdown < 1950) {
+                if (p1.gc) SDL_GameControllerRumble(p1.gc, 0x1A00, 0x0000, 50);
+                if (p2.gc) SDL_GameControllerRumble(p2.gc, 0x1A00, 0x0000, 50);
+            }
+
+            // Impacto contundente y violento a los 1950ms
+            if (elapsedShowdown >= 1950 && !impact_played) {
+                impact_played = true;
+                if (sfxImpact) Mix_PlayChannel(5, sfxImpact, 0);
+                if (p1.gc) SDL_GameControllerRumble(p1.gc, 0xFFFF, 0xFFFF, 220);
+                if (p2.gc) SDL_GameControllerRumble(p2.gc, 0xFFFF, 0xFFFF, 220);
+            }
+
+            if (elapsedShowdown >= 2500) { // Secuencia total extendida a 2.5s
                 state = STATE_RESULT;
             }
         }
@@ -1213,13 +1270,13 @@ int main(int argc, char** argv) {
             phaseP2 = p2.has_drawn ? 2 : 1;
         } else if (state == STATE_SHOWDOWN) {
             Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
-            if (elapsedShowdown < 1350) {
-                // Durante el Bullet-Time: el ganador dispara (pose 2) y el derrotado aún está en tensión/desenfundando (pose 1)
+            if (elapsedShowdown < 1950) {
+                // Durante el vuelo balístico en cámara lenta: ganador firme disparando, rival paralizado
                 phaseP1 = (winner == 1) ? 2 : 1;
                 phaseP2 = (winner == 2) ? 2 : 1;
                 if (winner == 3) { phaseP1 = 2; phaseP2 = 2; }
             } else {
-                // Impacto final: el rival cae derrotado al piso (pose 3)
+                // Al impactar: caída dramática en cámara lenta
                 phaseP1 = (winner == 1) ? 2 : 3;
                 phaseP2 = (winner == 2) ? 2 : 3;
                 if (winner == 3) { phaseP1 = 3; phaseP2 = 3; }
@@ -1232,90 +1289,294 @@ int main(int argc, char** argv) {
             else if (winner == 3) { phaseP1 = 3; phaseP2 = 3; }
         }
 
-        // Dibujar Vaqueros Brutalistas
-        drawCowboy(ren, whiteTex, 480, 490, phaseP1, false, currTime, tension_prog);
-        drawCowboy(ren, whiteTex, 1440, 490, phaseP2, true, currTime, tension_prog);
+        // Determinar si se dibuja el sombrero en el suelo (se oculta mientras vuela en el aire durante el impacto)
+        Uint32 elShowdownNow = (state == STATE_SHOWDOWN) ? (SDL_GetTicks() - hit_time) : 0;
+        bool showP1GroundHat = !(winner == 2 && state == STATE_SHOWDOWN && elShowdownNow < 2400);
+        bool showP2GroundHat = !(winner == 1 && state == STATE_SHOWDOWN && elShowdownNow < 2400);
 
-        // SECUENCIA CINEMÁTICA: BULLET-TIME ARTESANAL DE ALTA DEFINICIÓN
+        // Dibujar Vaqueros Brutalistas
+        drawCowboy(ren, whiteTex, 480, 490, phaseP1, false, currTime, tension_prog, showP1GroundHat);
+        drawCowboy(ren, whiteTex, 1440, 490, phaseP2, true, currTime, tension_prog, showP2GroundHat);
+
+        // =========================================================================
+        // SECUENCIA CINEMÁTICA: BULLET-TIME ÉPICO Y ESPECTACULAR
+        // =========================================================================
         if (state == STATE_SHOWDOWN && bullet_winner > 0) {
             Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
-            
-            // FASE 2 DEL CLÍMAX: Vuelo balístico en cámara lenta (90ms a 1400ms)
-            if (elapsedShowdown >= 90 && elapsedShowdown < 1400) {
-                float bulletProg = (float)(elapsedShowdown - 90) / 1300.0f; // 0.0 a 1.0 suave
-                float startX = (bullet_winner == 1) ? 570.0f : 1350.0f;
-                float targetX = (bullet_winner == 1) ? 1410.0f : 510.0f;
+            int dir = (bullet_winner == 1) ? 1 : -1;
+            // Boca del cañón calculada exactamente según la geometría del revólver en pantalla
+            float startX = (bullet_winner == 1) ? 755.0f : 1165.0f;
+            float targetX = (bullet_winner == 1) ? 1390.0f : 530.0f;
+            float bulletY = 442.0f;
+            float cylinderX = (bullet_winner == 1) ? 660.0f : 1260.0f;
+
+            // FASE 2: VUELO BALÍSTICO EN ULTRA CÁMARA LENTA (100ms a 1950ms)
+            if (elapsedShowdown >= 100 && elapsedShowdown < 1950) {
+                float rawProg = (float)(elapsedShowdown - 100) / 1850.0f; // 0.0 a 1.0
+                // Curva cinemática: desacelera a ultra slow-mo y avanza implacable
+                float bulletProg = rawProg * rawProg * (3.0f - 2.0f * rawProg);
                 float currentBulletX = startX + (targetX - startX) * bulletProg;
-                float bulletY = 460.0f;
 
                 SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
 
-                // 1. Estela de vacío / líneas de velocidad hipersónicas
-                float trailLen = 320.0f * (1.0f - std::abs(bulletProg - 0.5f) * 0.4f);
-                float trailStart = (bullet_winner == 1) ? (currentBulletX - trailLen) : currentBulletX;
-                SDL_SetRenderDrawColor(ren, 255, 235, 70, 200);
-                SDL_Rect tracerCore = { (int)trailStart, (int)(bulletY - 2), (int)trailLen, 4 };
-                SDL_RenderFillRect(ren, &tracerCore);
-                SDL_SetRenderDrawColor(ren, 255, 255, 255, 240);
-                SDL_Rect tracerWhite = { (int)trailStart, (int)(bulletY - 1), (int)trailLen, 2 };
-                SDL_RenderFillRect(ren, &tracerWhite);
+                // 1. VIÑETA OSCURA CINEMATOGRÁFICA EN ESCENA (Enfoca el ojo en la trayectoria)
+                SDL_SetRenderDrawColor(ren, 10, 10, 14, 55);
+                SDL_Rect topVignette = { 0, 0, 1920, 200 };
+                SDL_Rect botVignette = { 0, 880, 1920, 200 };
+                SDL_RenderFillRect(ren, &topVignette);
+                SDL_RenderFillRect(ren, &botVignette);
 
-                // 2. Ondas de choque supersónicas cónicas
-                for (int c = 1; c <= 3; ++c) {
-                    float shockOffset = (float)c * 70.0f;
-                    float shockX = (bullet_winner == 1) ? (currentBulletX - shockOffset) : (currentBulletX + shockOffset);
-                    if ((bullet_winner == 1 && shockX > startX) || (bullet_winner == 2 && shockX < startX)) {
-                        float shockH = 35.0f + (float)c * 15.0f;
-                        SDL_SetRenderDrawColor(ren, 240, 240, 240, (Uint8)(170 - c * 40));
-                        SDL_Rect shockR = { (int)(shockX - 3), (int)(bulletY - shockH / 2), 6, (int)shockH };
+                // 2. LÍNEAS DE VELOCIDAD HORIZONTALES HIPERSÓNICAS (Speed Lines dinámicas estilo anime)
+                for (int s = 0; s < 16; ++s) {
+                    int lineY = 240 + s * 38;
+                    int lineLen = 140 + ((s * 47) % 260);
+                    float speedJitter = std::sin(currTime * 35.0f + s * 1.5f) * 40.0f;
+                    int lineX = (int)currentBulletX - dir * (120 + ((s * 61) % 480) + (int)speedJitter);
+                    Uint8 lineAlpha = (Uint8)(35 + (s % 4) * 22 + std::sin(currTime * 25.0f + s) * 15);
+                    SDL_SetRenderDrawColor(ren, 25, 25, 30, lineAlpha);
+                    SDL_Rect sLine = { lineX, lineY, lineLen, (s % 3 == 0) ? 3 : 2 };
+                    SDL_RenderFillRect(ren, &sLine);
+                }
+
+                // 3. HUMO DE PÓLVORA VOLUMÉTRICO EXPANDIÉNDOSE LENTAMENTE EN LA BOCA DEL CAÑÓN
+                float smokeProgress = std::min(1.0f, (float)(elapsedShowdown - 100) / 900.0f);
+                for (int sm = 0; sm < 6; ++sm) {
+                    float sOffset = (float)sm * 14.0f * smokeProgress;
+                    float sRadius = 16.0f + (float)sm * 10.0f + smokeProgress * 28.0f;
+                    float smX = startX + dir * sOffset - (float)sm * 4.0f * dir;
+                    float smY = bulletY - 12.0f - smokeProgress * 22.0f - (float)sm * 5.0f;
+                    Uint8 smAlpha = (Uint8)(std::max(0.0f, (1.0f - smokeProgress) * (140 - sm * 18)));
+                    SDL_SetRenderDrawColor(ren, 210, 205, 195, smAlpha);
+                    SDL_Rect smR = { (int)(smX - sRadius / 2), (int)(smY - sRadius / 2), (int)sRadius, (int)sRadius };
+                    SDL_RenderFillRect(ren, &smR);
+                }
+
+                // 4. CHISPAS INCANDESCENTES FLOTANDO CERCA DE LA BOCA DEL CAÑÓN
+                for (int sp = 0; sp < 6; ++sp) {
+                    float sparkT = std::fmod((float)(elapsedShowdown - 100) * 0.002f + sp * 0.18f, 1.0f);
+                    float spX = startX + dir * (sparkT * 90.0f + sp * 8.0f);
+                    float spY = bulletY - 15.0f - std::sin(sparkT * 3.14159f) * 35.0f + sp * 6.0f;
+                    Uint8 spAlpha = (Uint8)(255 * (1.0f - sparkT));
+                    SDL_SetRenderDrawColor(ren, 255, 190, 40, spAlpha);
+                    SDL_Rect spR = { (int)spX, (int)spY, 4, 4 };
+                    SDL_RenderFillRect(ren, &spR);
+                }
+
+                // 5. CASQUILLO DORADO EN CÁMARA LENTA VOLANDO DESDE EL TAMBOR
+                float shellT = std::min(1.0f, rawProg * 1.55f);
+                float shellX = cylinderX - dir * (shellT * 85.0f);
+                float shellY = bulletY - 14.0f - std::sin(shellT * 3.14159f) * 65.0f + shellT * 48.0f;
+
+                // Cuerpo de latón brillante
+                SDL_SetRenderDrawColor(ren, 245, 215, 50, 255);
+                SDL_Rect shellR = { (int)shellX - 8, (int)shellY - 4, 16, 8 };
+                SDL_RenderFillRect(ren, &shellR);
+                // Borde de la vaina y culote
+                SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
+                SDL_RenderDrawRect(ren, &shellR);
+                SDL_SetRenderDrawColor(ren, 255, 245, 150, 255);
+                SDL_Rect shellRim = { dir == 1 ? (int)shellX - 8 : (int)shellX + 6, (int)shellY - 5, 3, 10 };
+                SDL_RenderFillRect(ren, &shellRim);
+
+                // 6. ONDAS DE CHOQUE CÓNICAS EXPANSIVAS (Mach Shockwave Cones & Shock Diamonds)
+                for (int c = 1; c <= 5; ++c) {
+                    float shockOffset = (float)c * 95.0f;
+                    float shockX = currentBulletX - dir * shockOffset;
+                    if ((dir == 1 && shockX > startX) || (dir == -1 && shockX < startX)) {
+                        float coneProgress = 1.0f - (float)c * 0.18f;
+                        float shockH = 34.0f + (float)c * 24.0f;
+                        float shockW = 14.0f + (float)c * 10.0f;
+                        
+                        // Diamantes de choque
+                        SDL_SetRenderDrawColor(ren, 255, 240, 100, (Uint8)(90 * coneProgress));
+                        SDL_Rect diamond = { (int)(shockX - 6), (int)(bulletY - 6), 12, 12 };
+                        SDL_RenderDrawRect(ren, &diamond);
+
+                        // Anillo de refracción acústica
+                        SDL_SetRenderDrawColor(ren, 255, 255, 255, (Uint8)(175 * coneProgress));
+                        SDL_Rect shockR = { (int)(shockX - shockW / 2), (int)(bulletY - shockH / 2), (int)shockW, (int)shockH };
                         SDL_RenderDrawRect(ren, &shockR);
+                        
+                        // Vectores envolventes del cono Mach
+                        SDL_SetRenderDrawColor(ren, 255, 225, 60, (Uint8)(130 * coneProgress));
+                        SDL_RenderDrawLine(ren, (int)currentBulletX, (int)bulletY, (int)shockX, (int)(bulletY - shockH / 2));
+                        SDL_RenderDrawLine(ren, (int)currentBulletX, (int)bulletY, (int)shockX, (int)(bulletY + shockH / 2));
                     }
                 }
 
-                // 3. Proyectil dorado con punta afilada y reflejo metálico
-                SDL_SetRenderDrawColor(ren, 245, 205, 45, 255);
-                SDL_Rect bulletBody = { (int)(currentBulletX - 12), (int)(bulletY - 5), 24, 10 };
-                SDL_RenderFillRect(ren, &bulletBody);
-                SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
-                SDL_RenderDrawRect(ren, &bulletBody);
-                SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
-                SDL_Rect bulletHighlight = { (int)(currentBulletX - 10), (int)(bulletY - 3), 20, 3 };
-                SDL_RenderFillRect(ren, &bulletHighlight);
+                // 7. ESTELA DE VACÍO HIPERSÓNICA SUPERSÓNICA (Tracer multicapa que nace directamente en la boca de la pistola)
+                float trailStart = (dir == 1) ? startX : currentBulletX;
+                float trailLen = (dir == 1) ? std::max(0.0f, currentBulletX - startX) : std::max(0.0f, startX - currentBulletX);
+                
+                if (trailLen > 1.0f) {
+                    // Resplandor ardiente exterior de plasma
+                    SDL_SetRenderDrawColor(ren, 255, 150, 30, 95);
+                    SDL_Rect trOuter = { (int)trailStart, (int)(bulletY - 6), (int)trailLen, 12 };
+                    SDL_RenderFillRect(ren, &trOuter);
 
-                // 4. Sombrero del rival empezando a desestabilizarse por el aire que corta
-                if (bulletProg > 0.82f) {
-                    float hatShake = std::sin((float)elapsedShowdown * 0.05f) * 8.0f;
-                    float rivalX = (bullet_winner == 1) ? 1440.0f : 480.0f;
+                    // Resplandor dorado supersónico
+                    SDL_SetRenderDrawColor(ren, 255, 215, 50, 160);
+                    SDL_Rect trGlow = { (int)trailStart, (int)(bulletY - 4), (int)trailLen, 8 };
+                    SDL_RenderFillRect(ren, &trGlow);
+                    
+                    // Núcleo láser brillante
+                    SDL_SetRenderDrawColor(ren, 255, 245, 130, 240);
+                    SDL_Rect trCore = { (int)trailStart, (int)(bulletY - 2), (int)trailLen, 4 };
+                    SDL_RenderFillRect(ren, &trCore);
+                    
+                    // Filamento blanco puro de calor extremo
                     SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
-                    SDL_Rect alertMark = { (int)(rivalX - 4), 360 + (int)hatShake, 8, 22 };
-                    SDL_RenderFillRect(ren, &alertMark);
+                    SDL_Rect trWhite = { (int)trailStart, (int)(bulletY - 1), (int)trailLen, 2 };
+                    SDL_RenderFillRect(ren, &trWhite);
+                }
+
+                // 8. CHISPAS DESPRENDIDAS DE LA TRAZADORA EN EL AIRE (Solo en el trayecto desde el cañón)
+                for (int trSp = 0; trSp < 8; ++trSp) {
+                    float spPos = (float)trSp * 55.0f;
+                    float sX = currentBulletX - dir * spPos;
+                    if ((dir == 1 && sX >= startX) || (dir == -1 && sX <= startX)) {
+                        float sY = bulletY + std::sin(currTime * 15.0f + trSp) * 6.0f;
+                        SDL_SetRenderDrawColor(ren, 255, 235, 120, (Uint8)(220 - trSp * 24));
+                        SDL_Rect sDot = { (int)sX, (int)sY, 3, 3 };
+                        SDL_RenderFillRect(ren, &sDot);
+                    }
+                }
+
+                // 9. PROYECTIL .45 CALIBER DE PRECISIÓN MILIMÉTRICA CON ROTACIÓN DE ESTRIADO
+                int bX = (int)currentBulletX;
+                int bY = (int)bulletY;
+                
+                // Cuerpo de cobre macizo
+                SDL_SetRenderDrawColor(ren, 235, 175, 30, 255);
+                SDL_Rect bBody = { dir == 1 ? bX - 22 : bX, bY - 7, 24, 14 };
+                SDL_RenderFillRect(ren, &bBody);
+
+                // Bisel inferior de sombra del proyectil
+                SDL_SetRenderDrawColor(ren, 175, 115, 15, 255);
+                SDL_Rect bBevel = { dir == 1 ? bX - 22 : bX, bY + 3, 24, 4 };
+                SDL_RenderFillRect(ren, &bBevel);
+
+                // Ranuras de estriado giratorio (Rifling spin visible en slow motion)
+                float riflingPhase = std::fmod(rawProg * 140.0f, 18.0f);
+                SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
+                SDL_RenderDrawRect(ren, &bBody);
+                for (int r = 0; r < 3; ++r) {
+                    int rLineX = (dir == 1) ? (bX - 20 + (int)(r * 7 + riflingPhase) % 20) : (bX + 2 + (int)(r * 7 + riflingPhase) % 20);
+                    SDL_RenderDrawLine(ren, rLineX, bY - 6, rLineX, bY + 6);
+                }
+                
+                // Ojiva puntiaguda dorada
+                SDL_SetRenderDrawColor(ren, 255, 235, 95, 255);
+                SDL_Rect bTip = { dir == 1 ? bX + 2 : bX - 14, bY - 5, 14, 10 };
+                SDL_RenderFillRect(ren, &bTip);
+                SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
+                SDL_RenderDrawRect(ren, &bTip);
+                
+                // Destello especular metálico brillante en la ojiva
+                SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
+                SDL_Rect bSpec = { dir == 1 ? bX + 6 : bX - 10, bY - 4, 8, 3 };
+                SDL_RenderFillRect(ren, &bSpec);
+
+                // 10. REACCIÓN DEL RIVAL ANTE LA INMINENCIA DEL DISPARO (bulletProg > 0.70f)
+                if (bulletProg > 0.70f) {
+                    float panicProg = (bulletProg - 0.70f) / 0.30f;
+                    float rivalX = (bullet_winner == 1) ? 1440.0f : 480.0f;
+                    
+                    // Ojos del rival abriéndose en shock
+                    SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
+                    SDL_Rect panicEye = { (int)(rivalX - dir * 18), 376, 8, 6 };
+                    SDL_RenderFillRect(ren, &panicEye);
+                    SDL_SetRenderDrawColor(ren, 15, 15, 15, 255);
+                    SDL_RenderDrawRect(ren, &panicEye);
+
+                    // Gotas de sudor congeladas saliendo despedidas de la sien
+                    for (int sw = 0; sw < 2; ++sw) {
+                        float swX = rivalX - dir * (28.0f + sw * 14.0f + panicProg * 18.0f);
+                        float swY = 370.0f - sw * 12.0f + panicProg * 10.0f;
+                        SDL_SetRenderDrawColor(ren, 140, 220, 255, (Uint8)(230 * panicProg));
+                        SDL_Rect swR = { (int)swX, (int)swY, 5, 7 };
+                        SDL_RenderFillRect(ren, &swR);
+                    }
+
+                    // Ondas sónicas que deforman y levantan el ala del sombrero
+                    float brimLift = panicProg * 24.0f;
+                    SDL_SetRenderDrawColor(ren, 255, 235, 70, (Uint8)(220 * panicProg));
+                    SDL_Rect shockFront = { (int)(rivalX - dir * 28), (int)(365 - brimLift * 0.4f), 10, 50 };
+                    SDL_RenderFillRect(ren, &shockFront);
                 }
 
                 SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
             }
             
-            // FASE 3 DEL CLÍMAX: El impacto brutal y el sombrero volando por los aires (1350ms a 1700ms)
-            if (elapsedShowdown >= 1350) {
-                float hitProg = (float)(elapsedShowdown - 1350) / 350.0f; // 0.0 a 1.0
+            // FASE 3: EL IMPACTO CINEMATOGRÁFICO Y SOMBRERO VOLANDO EN 720° (1950ms a 2500ms)
+            if (elapsedShowdown >= 1950) {
+                float hitProg = (float)(elapsedShowdown - 1950) / 550.0f; // 0.0 a 1.0
                 float rivalX = (bullet_winner == 1) ? 1440.0f : 480.0f;
-                float hatFlyX = rivalX + ((bullet_winner == 1) ? (hitProg * 120.0f) : (-hitProg * 120.0f));
-                float hatFlyY = 380.0f - std::sin(hitProg * 3.14159f) * 110.0f + hitProg * 40.0f;
-                float hatAngle = (bullet_winner == 1) ? (hitProg * 140.0f) : (-hitProg * 140.0f);
 
-                // Dibujar sombrero volando en el aire tras el impacto
+                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+
+                // 1. DESTELLO DE IMPACTO Y CHISPAS RADIALES (Primeros 150ms del impacto)
+                if (elapsedShowdown < 2100) {
+                    float impactFlashProg = (float)(elapsedShowdown - 1950) / 150.0f;
+                    SDL_SetRenderDrawColor(ren, 255, 255, 255, (Uint8)(255 * (1.0f - impactFlashProg)));
+                    SDL_Rect hitStar = { (int)(rivalX - 25), 440, 50, 18 };
+                    SDL_RenderFillRect(ren, &hitStar);
+                    
+                    // Chispas que salen despedidas en abanico
+                    for (int k = 0; k < 8; ++k) {
+                        float spkAngle = (float)k * 0.785f;
+                        float spkDist = impactFlashProg * 60.0f;
+                        int spkX = (int)(rivalX + std::cos(spkAngle) * spkDist);
+                        int spkY = (int)(450 + std::sin(spkAngle) * spkDist);
+                        SDL_SetRenderDrawColor(ren, 255, 220, 60, (Uint8)(255 * (1.0f - impactFlashProg)));
+                        SDL_Rect spkDot = { spkX, spkY, 5, 5 };
+                        SDL_RenderFillRect(ren, &spkDot);
+                    }
+                }
+
+                // 2. TRAYECTORIA PARABÓLICA Y GIRO ACROBÁTICO EN 720° DEL SOMBRERO
+                float hatFlyX = rivalX + dir * (hitProg * 220.0f);
+                float hatFlyY = 365.0f - std::sin(hitProg * 3.14159f) * 190.0f + hitProg * 105.0f;
+                float hatAngle = dir * (hitProg * 720.0f); // Dos giros completos espectaculares
+
+                // Ala del sombrero
                 SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
-                SDL_Rect flyBrim = { (int)(hatFlyX - 45), (int)(hatFlyY - 6), 90, 12 };
+                SDL_Rect flyBrim = { (int)(hatFlyX - 54), (int)(hatFlyY - 8), 108, 16 };
                 SDL_RenderFillRect(ren, &flyBrim);
-                SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
+                SDL_SetRenderDrawColor(ren, 18, 18, 18, 255);
                 SDL_RenderDrawRect(ren, &flyBrim);
 
-                // Polvo de impacto levantado
-                SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-                SDL_SetRenderDrawColor(ren, 200, 190, 170, (Uint8)(220 * (1.0f - hitProg)));
-                for (int p = 0; p < 6; ++p) {
-                    SDL_Rect dustP = { (int)(rivalX + (p - 3) * 22), (int)(560 - hitProg * 35), 18, 18 };
+                // Copa del sombrero con banda oscura y hebilla dorada
+                SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
+                SDL_Rect flyCrown = { (int)(hatFlyX - 24), (int)(hatFlyY - 30), 48, 24 };
+                SDL_RenderFillRect(ren, &flyCrown);
+                SDL_SetRenderDrawColor(ren, 35, 35, 40, 255);
+                SDL_Rect flyBand = { (int)(hatFlyX - 24), (int)(hatFlyY - 14), 48, 8 };
+                SDL_RenderFillRect(ren, &flyBand);
+                SDL_SetRenderDrawColor(ren, 245, 205, 45, 255); // Hebilla dorada
+                SDL_Rect flyBuckle = { (int)(hatFlyX - 6), (int)(hatFlyY - 14), 12, 8 };
+                SDL_RenderFillRect(ren, &flyBuckle);
+                SDL_SetRenderDrawColor(ren, 18, 18, 18, 255);
+                SDL_RenderDrawRect(ren, &flyCrown);
+
+                // 3. FRAGMENTOS DE FIELTRO DESPRENDIDOS EN EL AIRE
+                for (int fr = 0; fr < 4; ++fr) {
+                    float frX = rivalX + dir * (hitProg * (120.0f + fr * 35.0f));
+                    float frY = 380.0f - std::sin(hitProg * 3.14159f) * (80.0f + fr * 25.0f) + hitProg * 120.0f;
+                    SDL_SetRenderDrawColor(ren, 240, 240, 245, (Uint8)(240 * (1.0f - hitProg)));
+                    SDL_Rect fragR = { (int)frX, (int)frY, 8, 8 };
+                    SDL_RenderFillRect(ren, &fragR);
+                }
+
+                // 4. NUBE DE POLVO Y ONDA DE CHOQUE EXPANDIÉNDOSE DE LAS BOTAS DEL RIVAL
+                SDL_SetRenderDrawColor(ren, 220, 210, 190, (Uint8)(240 * (1.0f - hitProg)));
+                for (int p = 0; p < 12; ++p) {
+                    float dustSpread = (float)(p - 6) * 22.0f * (1.0f + hitProg * 0.8f);
+                    float dustLift = std::sin(hitProg * 3.14159f) * (48.0f + (p % 4) * 16.0f);
+                    SDL_Rect dustP = { (int)(rivalX + dustSpread), (int)(580 - dustLift), 24, 24 };
                     SDL_RenderFillRect(ren, &dustP);
                 }
+
                 SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
             }
         }
@@ -1363,44 +1624,60 @@ int main(int argc, char** argv) {
             }
         }
 
-        // BARRAS CINEMASCOPE 2.39:1 (LETTERBOX): Máximo formato cinematográfico en Tensión y Showdown
-        if (state == STATE_TENSION || state == STATE_DRAW || state == STATE_SHOWDOWN) {
-            int barHeight = (int)(95.0f * tension_prog);
-            SDL_SetRenderDrawColor(ren, 10, 10, 10, 255);
-            SDL_Rect topBar = { 0, 0, 1920, barHeight };
-            SDL_Rect bottomBar = { 0, 1080 - barHeight, 1920, barHeight };
-            SDL_RenderFillRect(ren, &topBar);
-            SDL_RenderFillRect(ren, &bottomBar);
-        }
-
         if (targetTex) {
             SDL_SetRenderTarget(ren, NULL);
-            SDL_SetRenderDrawColor(ren, 15, 15, 15, 255);
+            SDL_SetRenderDrawColor(ren, 15, 15, 18, 255);
             SDL_RenderClear(ren);
 
-            // CÁMARA DINÁMICA: En Showdown la cámara sigue a la bala con un plano corto
+            // CÁMARA CINEMATOGRÁFICA DINÁMICA: Paneo ultra suave con seguimiento balístico y trauma de impacto
             float zoom = 1.0f + (tension_prog * 0.35f);
             float focusX = 960.0f;
             float focusY = 540.0f;
+            float traumaShakeX = 0.0f;
+            float traumaShakeY = 0.0f;
 
             if (state == STATE_SHOWDOWN && bullet_winner > 0) {
                 Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
-                zoom = 1.45f;
-                if (elapsedShowdown < 1400) {
-                    float bProg = (float)elapsedShowdown / 1400.0f;
-                    float bX = (bullet_winner == 1) ? (570.0f + 840.0f * bProg) : (1350.0f - 840.0f * bProg);
-                    focusX = bX;
-                    focusY = 480.0f;
+                int dir = (bullet_winner == 1) ? 1 : -1;
+
+                if (elapsedShowdown < 100) {
+                    // 1. Frame freeze inicial enfocado en el cañón del tirador
+                    focusX = (bullet_winner == 1) ? 755.0f : 1165.0f;
+                    focusY = 442.0f;
+                    zoom = 1.62f;
+                } else if (elapsedShowdown < 1950) {
+                    // 2. Seguimiento lateral cinemático acompañando la bala en vuelo
+                    float rawP = (float)(elapsedShowdown - 100) / 1850.0f;
+                    float smoothP = rawP * rawP * (3.0f - 2.0f * rawP);
+                    float bX = (bullet_winner == 1) ? (755.0f + 635.0f * smoothP) : (1165.0f - 635.0f * smoothP);
+                    
+                    // Empuje de zoom progresivo de 1.65x a 1.82x
+                    zoom = 1.65f + rawP * 0.17f;
+                    
+                    // Composición visual: cámara adelanta ligeramente a la bala para ver el objetivo enfrente
+                    float leadOffset = dir * 135.0f * (1.0f - rawP * 0.45f);
+                    focusX = bX + leadOffset;
+                    focusY = 442.0f + std::sin(elapsedShowdown * 0.003f) * 4.0f;
                 } else {
+                    // 3. Impacto y K.O.: Enfoque en el rival derrotado cayendo y sombrero volando
+                    float hitP = (float)(elapsedShowdown - 1950) / 550.0f;
                     focusX = (bullet_winner == 1) ? 1440.0f : 480.0f;
-                    focusY = 500.0f;
+                    focusY = 505.0f;
+                    zoom = 1.82f - hitP * 0.32f; // Se aleja suavemente a 1.50x para captar toda la caída
+
+                    // Trauma de pantalla en el impacto (sacudida violenta que amortigua en 220ms)
+                    if (elapsedShowdown < 2170) {
+                        float trauma = 1.0f - (float)(elapsedShowdown - 1950) / 220.0f;
+                        traumaShakeX = std::sin(elapsedShowdown * 0.22f) * 16.0f * trauma;
+                        traumaShakeY = std::cos(elapsedShowdown * 0.28f) * 12.0f * trauma;
+                    }
                 }
             }
 
             int w = (int)(1920.0f / zoom);
             int h = (int)(1080.0f / zoom);
-            int srcX = (int)(focusX - w / 2.0f);
-            int srcY = (int)(focusY - h / 2.0f);
+            int srcX = (int)(focusX + traumaShakeX - w / 2.0f);
+            int srcY = (int)(focusY + traumaShakeY - h / 2.0f);
             if (srcX < 0) srcX = 0;
             if (srcX + w > 1920) srcX = 1920 - w;
             if (srcY < 0) srcY = 0;
@@ -1408,29 +1685,54 @@ int main(int argc, char** argv) {
 
             SDL_Rect src = { srcX, srcY, w, h };
             SDL_RenderCopy(ren, targetTex, &src, NULL);
+
+            // BARRAS CINEMASCOPE 2.39:1 (LETTERBOX) DIBUJADAS EN PANTALLA REAL (NUNCA AFECTADAS POR ZOOM)
+            if (state == STATE_TENSION || state == STATE_DRAW || state == STATE_SHOWDOWN) {
+                int barHeight = (int)(95.0f * tension_prog);
+                if (state == STATE_SHOWDOWN) {
+                    Uint32 el = SDL_GetTicks() - hit_time;
+                    float expandT = std::min(1.0f, (float)el / 350.0f);
+                    barHeight = (int)(95.0f + 40.0f * expandT); // Se expande a 135px para ratio 2.40:1 Cinemascope puro
+                }
+                SDL_SetRenderDrawColor(ren, 10, 10, 12, 255);
+                SDL_Rect topBar = { 0, 0, 1920, barHeight };
+                SDL_Rect bottomBar = { 0, 1080 - barHeight, 1920, barHeight };
+                SDL_RenderFillRect(ren, &topBar);
+                SDL_RenderFillRect(ren, &bottomBar);
+            }
         }
 
-        // FASE 1 DEL CLÍMAX: HIT-STOP CON INVERSIÓN DE COLOR NEGRO Y RELÁMPAGO (Primeros 90ms)
+        // FASE 1 DEL CLÍMAX: HIT-STOP CON INVERSIÓN DE COLOR NEGRO Y RELÁMPAGO (Primeros 100ms)
         if (state == STATE_SHOWDOWN) {
             Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
-            if (elapsedShowdown < 90) {
+            if (elapsedShowdown < 100) {
                 SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-                SDL_SetRenderDrawColor(ren, 10, 10, 10, 240);
+                // Oscurecimiento de alto contraste instantáneo
+                SDL_SetRenderDrawColor(ren, 10, 10, 14, 245);
                 SDL_Rect fullScreen = { 0, 0, 1920, 1080 };
                 SDL_RenderFillRect(ren, &fullScreen);
 
+                // Destello estelar geométrico exactamente en la boca del revólver
+                float flashOriginX = (bullet_winner == 1) ? 755.0f : 1165.0f;
                 SDL_SetRenderDrawColor(ren, 255, 235, 70, 255);
-                float flashOriginX = (bullet_winner == 1) ? 620.0f : 1300.0f;
-                SDL_Rect flashSpike = { (int)flashOriginX, 440, 140, 14 };
-                SDL_RenderFillRect(ren, &flashSpike);
+                SDL_Rect flashSpikeH = { (int)(flashOriginX - 70), 442 - 8, 140, 16 };
+                SDL_RenderFillRect(ren, &flashSpikeH);
+                SDL_Rect flashSpikeV = { (int)(flashOriginX - 8), 442 - 70, 16, 140 };
+                SDL_RenderFillRect(ren, &flashSpikeV);
+                
+                // Núcleo blanco fulminante
+                SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
+                SDL_Rect flashCore = { (int)(flashOriginX - 25), 442 - 12, 50, 24 };
+                SDL_RenderFillRect(ren, &flashCore);
+
                 SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
             }
         }
 
         // INTERFAZ DE RESULTADO DINÁMICA, MODERNA Y ELEGANTE (Renderizada en pantalla limpia sin zoom)
         if (state == STATE_RESULT) {
-            // Entrada suave y limpia desde arriba
-            Uint32 resElapsed = SDL_GetTicks() - (hit_time + 1700);
+            // Entrada suave y limpia desde arriba (después de 2500ms de clímax cinematográfico)
+            Uint32 resElapsed = SDL_GetTicks() - (hit_time + 2500);
             float animProg = std::min(1.0f, (float)resElapsed / 350.0f);
             float smoothT = animProg * (2.0f - animProg); // Ease-out cuadrático
             int bannerY = (int)(25.0f - (1.0f - smoothT) * 40.0f);
@@ -1528,6 +1830,9 @@ int main(int argc, char** argv) {
     if (sfxTick) { std::free(sfxTick->abuf); std::free(sfxTick); }
     if (sfxBell) { std::free(sfxBell->abuf); std::free(sfxBell); }
     if (sfxHammer) { std::free(sfxHammer->abuf); std::free(sfxHammer); }
+    if (sfxTimeWarp) { std::free(sfxTimeWarp->abuf); std::free(sfxTimeWarp); }
+    if (sfxBulletFly) { std::free(sfxBulletFly->abuf); std::free(sfxBulletFly); }
+    if (sfxImpact) { std::free(sfxImpact->abuf); std::free(sfxImpact); }
     Mix_CloseAudio();
 
     if (p1.gc) SDL_GameControllerClose(p1.gc);
