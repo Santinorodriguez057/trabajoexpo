@@ -88,6 +88,22 @@ build\bin\menu.exe
 | Jugar         | X              | Enter / Espacio|
 | Salir         | Círculo        | ESC            |
 
+## Juegos Incluidos
+
+### 1. Duelo de Vaqueros
+- Reflejos, tensión, giroscopio y duelos 1v1 con mandos PS4.
+
+### 2. Test de Mando
+- Diagnóstico completo de ejes, botones, giroscopio, acelerómetro y vibración háptica.
+
+### 3. Tiro con Arco (Apuntado Físico DualShock)
+- **Apuntado Físico**: Sostén el DualShock frente a ti y apunta como si fuera un arco real moviendo y orientando el mando (giroscopio + acelerómetro).
+- **Tensado Progresivo**: Mantén presionado **R2** para acumular tensión en el arco (la cuerda y palas se flexionan en primera persona y el mando vibra con resistencia háptica).
+- **Disparo Balístico**: Suelta **R2** para disparar la flecha. La física parabólica tiene en cuenta la caída por gravedad según la distancia de la diana (15m a 70m).
+- **Calibración Rápida**: Presiona **Triángulo [△]** o tecla **[C]** en cualquier instante para re-centrar la posición de tiro.
+- **Configuración en Pausa**: Presiona **Options** o **ESC** para ajustar sensibilidad horizontal/vertical, suavizado de mira, zona muerta, inversión de eje y vibración.
+
+
 ## Añadir un juego
 
 1. **SDL2**: copia `games/sdl2/template_game/`, renómbrala, edítala y añade
