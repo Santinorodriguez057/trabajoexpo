@@ -16,6 +16,11 @@ foreach(cfg ${CMAKE_CONFIGURATION_TYPES})
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${cfg_upper} ${CMAKE_BINARY_DIR}/bin)
 endforeach()
 
+# En Windows, autoconfigurar dependencias SDL2 y copiar DLLs / registry
+if(WIN32)
+    include(cmake/SetupSDL2Windows.cmake)
+endif()
+
 add_subdirectory(menu)
 
 # ---------------------------------------------------------------------------

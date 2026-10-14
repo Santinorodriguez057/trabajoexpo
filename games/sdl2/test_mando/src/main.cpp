@@ -4,16 +4,28 @@
 #include <string>
 #include <vector>
 
+#include <cstdlib>
+
 static TTF_Font* loadFont() {
-    const char* candidates[] = {
+    std::vector<std::string> candidates = {
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-        "C:\\Windows\\Fonts\\arial.ttf",
-        "C:\\Windows\\Fonts\\segoeui.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     };
-    for (const char* path : candidates) {
-        TTF_Font* f = TTF_OpenFont(path, 20);
+
+    const char* winDir = std::getenv("WINDIR");
+    if (!winDir) winDir = std::getenv("SystemRoot");
+    std::string winBase = winDir ? winDir : "C:\\Windows";
+    candidates.push_back(winBase + "\\Fonts\\arial.ttf");
+    candidates.push_back(winBase + "\\Fonts\\segoeui.ttf");
+    candidates.push_back(winBase + "\\Fonts\\tahoma.ttf");
+    candidates.push_back(winBase + "\\Fonts\\calibri.ttf");
+    candidates.push_back("C:\\Windows\\Fonts\\arial.ttf");
+    candidates.push_back("C:\\Windows\\Fonts\\segoeui.ttf");
+
+    for (const auto& path : candidates) {
+        TTF_Font* f = TTF_OpenFont(path.c_str(), 20);
         if (f) return f;
     }
     return nullptr;

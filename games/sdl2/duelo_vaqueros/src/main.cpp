@@ -107,16 +107,49 @@ bool isMatchingPose(const float current[3], const float target[3], float toleran
     return dot > tolerance; // 0.6 es aprox 53 grados de tolerancia de margen
 }
 
+static std::string resolveAssetPath(const std::string& relPath) {
+    if (FILE* f = std::fopen(relPath.c_str(), "rb")) {
+        std::fclose(f);
+        return relPath;
+    }
+    std::string fromBin = "../../" + relPath;
+    if (FILE* f = std::fopen(fromBin.c_str(), "rb")) {
+        std::fclose(f);
+        return fromBin;
+    }
+    std::string fromBuild = "../" + relPath;
+    if (FILE* f = std::fopen(fromBuild.c_str(), "rb")) {
+        std::fclose(f);
+        return fromBuild;
+    }
+    std::string directAsset = "assets/" + relPath.substr(relPath.find_last_of('/') + 1);
+    if (FILE* f = std::fopen(directAsset.c_str(), "rb")) {
+        std::fclose(f);
+        return directAsset;
+    }
+    return relPath;
+}
+
 static TTF_Font* loadFont() {
-    const char* candidates[] = {
+    std::vector<std::string> candidates = {
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-        "C:\\Windows\\Fonts\\arial.ttf",
-        "C:\\Windows\\Fonts\\segoeui.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     };
-    for (const char* path : candidates) {
-        TTF_Font* f = TTF_OpenFont(path, 96);
+
+    const char* winDir = std::getenv("WINDIR");
+    if (!winDir) winDir = std::getenv("SystemRoot");
+    std::string winBase = winDir ? winDir : "C:\\Windows";
+    candidates.push_back(winBase + "\\Fonts\\arial.ttf");
+    candidates.push_back(winBase + "\\Fonts\\segoeui.ttf");
+    candidates.push_back(winBase + "\\Fonts\\tahoma.ttf");
+    candidates.push_back(winBase + "\\Fonts\\calibri.ttf");
+    candidates.push_back("C:\\Windows\\Fonts\\arial.ttf");
+    candidates.push_back("C:\\Windows\\Fonts\\segoeui.ttf");
+
+    for (const auto& path : candidates) {
+        TTF_Font* f = TTF_OpenFont(path.c_str(), 96);
         if (f) return f;
     }
     return nullptr;
@@ -891,7 +924,10 @@ int main(int argc, char** argv) {
     Uint8 *wav_buffer = nullptr;
     SDL_AudioDeviceID controller_audio = 0;
     
-    if (SDL_LoadWAV("games/sdl2/duelo_vaqueros/assets/disparo.wav", &wav_spec, &wav_buffer, &wav_length) == NULL) {
+    std::string disparoPath = resolveAssetPath("games/sdl2/duelo_vaqueros/assets/disparo.wav");
+    std::string tensionPath = resolveAssetPath("games/sdl2/duelo_vaqueros/assets/tension.wav");
+    
+    if (SDL_LoadWAV(disparoPath.c_str(), &wav_spec, &wav_buffer, &wav_length) == NULL) {
         std::fprintf(stderr, "No se pudo cargar disparo.wav: %s\n", SDL_GetError());
     } else {
         int count = SDL_GetNumAudioDevices(0);
@@ -905,8 +941,8 @@ int main(int argc, char** argv) {
         }
     }
     
-    Mix_Chunk* sfxDisparoPC = Mix_LoadWAV("games/sdl2/duelo_vaqueros/assets/disparo.wav");
-    Mix_Chunk* bgmTension = Mix_LoadWAV("games/sdl2/duelo_vaqueros/assets/tension.wav");
+    Mix_Chunk* sfxDisparoPC = Mix_LoadWAV(disparoPath.c_str());
+    Mix_Chunk* bgmTension = Mix_LoadWAV(tensionPath.c_str());
 
     // SFX Sintetizados Procedurales de alta calidad
     Mix_Chunk* sfxHeartbeat = generateToneChunk(120, 55, 12.0f, 0.9f, 0);   // Latido grave profundo

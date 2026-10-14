@@ -10,12 +10,18 @@ add_executable(menu
 
 target_include_directories(menu PRIVATE src)
 
-# SDL2_ttf puede exportar su target con distintos nombres segun la version.
+set(MENU_LIBS SDL2::SDL2)
+if(TARGET SDL2::SDL2main)
+    list(APPEND MENU_LIBS SDL2::SDL2main)
+endif()
+
 if(TARGET SDL2::SDL2_ttf)
-    target_link_libraries(menu PRIVATE SDL2::SDL2 SDL2::SDL2_ttf)
+    list(APPEND MENU_LIBS SDL2::SDL2_ttf)
 elseif(TARGET SDL2_ttf::SDL2_ttf)
-    target_link_libraries(menu PRIVATE SDL2::SDL2 SDL2_ttf::SDL2_ttf)
+    list(APPEND MENU_LIBS SDL2_ttf::SDL2_ttf)
 else()
-    target_link_libraries(menu PRIVATE SDL2::SDL2 ${SDL2_TTF_LIBRARIES})
+    list(APPEND MENU_LIBS ${SDL2_TTF_LIBRARIES})
     target_include_directories(menu PRIVATE ${SDL2_TTF_INCLUDE_DIRS})
 endif()
+
+target_link_libraries(menu PRIVATE ${MENU_LIBS})

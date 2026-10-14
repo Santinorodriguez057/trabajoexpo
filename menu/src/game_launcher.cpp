@@ -13,8 +13,29 @@ int GameLauncher::launch(const std::string& executable) {
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
 
-    std::string cmd = "\"" + executable + "\"";
-    if (!CreateProcessA(nullptr, &cmd[0], nullptr, nullptr, FALSE, 0,
+    // Normalizar ruta para Windows (reemplazar / por \)
+    std::string winPath = executable;
+    for (char& c : winPath) {
+        if (c == '/') c = '\\';
+    }
+
+    std::string targetExe = winPath;
+    if (GetFileAttributesA(targetExe.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        // Si no existe, probar con solo el nombre del archivo (ej. si se corre desde build/bin/)
+        size_t lastSlash = winPath.find_last_of("\\/");
+        if (lastSlash != std::string::npos) {
+            std::string baseName = winPath.substr(lastSlash + 1);
+            if (GetFileAttributesA(baseName.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                targetExe = baseName;
+            }
+        }
+    }
+
+    std::string cmd = "\"" + targetExe + "\"";
+    std::vector<char> cmdBuf(cmd.begin(), cmd.end());
+    cmdBuf.push_back('\0');
+
+    if (!CreateProcessA(nullptr, cmdBuf.data(), nullptr, nullptr, FALSE, 0,
                         nullptr, nullptr, &si, &pi)) {
         return -1;
     }
@@ -25,12 +46,23 @@ int GameLauncher::launch(const std::string& executable) {
     CloseHandle(pi.hThread);
     return static_cast<int>(code);
 #else
+    std::string targetExe = executable;
+    if (access(targetExe.c_str(), X_OK) != 0) {
+        size_t lastSlash = executable.find_last_of('/');
+        if (lastSlash != std::string::npos) {
+            std::string baseName = executable.substr(lastSlash + 1);
+            if (access(baseName.c_str(), X_OK) == 0) {
+                targetExe = "./" + baseName;
+            }
+        }
+    }
+
     pid_t pid = fork();
     if (pid < 0) return -1;
 
     if (pid == 0) {
         // Proceso hijo: sustituye la imagen del proceso por el juego.
-        execl(executable.c_str(), executable.c_str(), static_cast<char*>(nullptr));
+        execl(targetExe.c_str(), targetExe.c_str(), static_cast<char*>(nullptr));
         _exit(127); // solo se llega aqui si execl falla
     }
 

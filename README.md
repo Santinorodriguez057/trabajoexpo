@@ -44,37 +44,41 @@ flowchart LR
 
 ## Requisitos
 
-- CMake ≥ 3.16
-- Compilador C++17 (g++/clang/MSVC)
-- SDL2 y SDL2_ttf (dev)
-
-Instalación en Linux (Debian/Ubuntu):
-
-```bash
-sudo apt install cmake g++ libsdl2-dev libsdl2-ttf-dev
-```
-
-En Windows: instala SDL2 y SDL2_ttf (paquetes de desarrollo) y usa Visual Studio
-o MinGW con CMake.
+- **CMake ≥ 3.16**
+- **Compilador C++17** (g++/clang en Linux, MSVC o MinGW en Windows)
+- **Librerías SDL2**:
+  - En **Linux (Debian/Ubuntu)**:
+    ```bash
+    sudo apt install cmake g++ libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev
+    ```
+  - En **Windows**:
+    **¡No necesitas instalar ni descargar librerías manualmente!**
+    El sistema CMake descarga y configura automáticamente las versiones oficiales de SDL2, SDL2_ttf y SDL2_mixer en su primera ejecución, y copia todas las DLLs requeridas a `build/bin/`. Solo necesitas tener instalado:
+    - [CMake](https://cmake.org/download/) (asegúrate de marcar "Add CMake to PATH")
+    - Compilador C++: **Visual Studio 2019/2022** (con la carga de trabajo "Desarrollo para el escritorio con C++") o **MinGW-w64**
 
 ## Compilar y ejecutar
 
-Linux:
+### Linux:
 
 ```bash
 ./scripts/build.sh
 ./build/bin/menu
 ```
 
-Windows:
+### Windows:
 
+Doble clic en:
+```bat
+scripts\build.bat
+```
+O desde la consola (CMD o PowerShell):
 ```bat
 scripts\build.bat
 build\bin\menu.exe
 ```
 
-> Ejecuta el menú desde la raíz del repositorio (las rutas de `games.registry`
-> son relativas a la raíz).
+> **Nota:** Puedes ejecutar el menú tanto desde la raíz del proyecto como haciendo doble clic directamente sobre `build\bin\menu.exe`. Detecta automáticamente los juegos y sus recursos.
 
 ## Controles (menú)
 

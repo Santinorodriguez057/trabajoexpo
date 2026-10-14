@@ -1,5 +1,6 @@
 # Build
 build/
+windows_deps/
 
 # Compilacion
 *.o

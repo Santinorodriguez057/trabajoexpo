@@ -2,6 +2,16 @@
 #include <SDL_ttf.h>
 
 #include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <vector>
+
+#if defined(_WIN32)
+#include <direct.h>
+#define chdir _chdir
+#else
+#include <unistd.h>
+#endif
 
 #include "game_registry.h"
 #include "menu.h"
@@ -9,22 +19,44 @@
 static const char* kRegistryPath = "games.registry";
 
 static TTF_Font* loadFont() {
-    // Rutas de fuentes comunes en Linux y Windows.
-    const char* candidates[] = {
+    std::vector<std::string> candidates = {
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-        "C:\\Windows\\Fonts\\arial.ttf",
-        "C:\\Windows\\Fonts\\segoeui.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     };
-    for (const char* path : candidates) {
-        TTF_Font* f = TTF_OpenFont(path, 96);
+
+    const char* winDir = std::getenv("WINDIR");
+    if (!winDir) winDir = std::getenv("SystemRoot");
+    std::string winBase = winDir ? winDir : "C:\\Windows";
+    candidates.push_back(winBase + "\\Fonts\\arial.ttf");
+    candidates.push_back(winBase + "\\Fonts\\segoeui.ttf");
+    candidates.push_back(winBase + "\\Fonts\\tahoma.ttf");
+    candidates.push_back(winBase + "\\Fonts\\calibri.ttf");
+    candidates.push_back("C:\\Windows\\Fonts\\arial.ttf");
+    candidates.push_back("C:\\Windows\\Fonts\\segoeui.ttf");
+
+    for (const auto& path : candidates) {
+        TTF_Font* f = TTF_OpenFont(path.c_str(), 96);
         if (f) return f;
     }
     return nullptr;
 }
 
 int main(int argc, char** argv) {
+    // Si games.registry no está en el directorio actual (ej. se ejecutó desde build/bin), ajustar working dir
+    FILE* testF = std::fopen(kRegistryPath, "r");
+    if (!testF) {
+        if (FILE* f2 = std::fopen("../../games.registry", "r")) {
+            std::fclose(f2);
+            if (chdir("../..") != 0) {}
+        } else if (FILE* f1 = std::fopen("../games.registry", "r")) {
+            std::fclose(f1);
+            if (chdir("..") != 0) {}
+        }
+    } else {
+        std::fclose(testF);
+    }
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0) {
         std::fprintf(stderr, "SDL_Init fallo: %s\n", SDL_GetError());
         return 1;
