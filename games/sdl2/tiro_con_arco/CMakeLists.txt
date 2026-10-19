@@ -10,10 +10,11 @@ add_executable(tiro_con_arco
     src/archery_game.cpp
 )
 
-set(TIRO_LIBS SDL2::SDL2)
+set(TIRO_LIBS)
 if(TARGET SDL2::SDL2main)
     list(APPEND TIRO_LIBS SDL2::SDL2main)
 endif()
+list(APPEND TIRO_LIBS SDL2::SDL2)
 
 if(TARGET SDL2::SDL2_ttf)
     list(APPEND TIRO_LIBS SDL2::SDL2_ttf)

@@ -10,10 +10,11 @@ add_executable(menu
 
 target_include_directories(menu PRIVATE src)
 
-set(MENU_LIBS SDL2::SDL2)
+set(MENU_LIBS)
 if(TARGET SDL2::SDL2main)
     list(APPEND MENU_LIBS SDL2::SDL2main)
 endif()
+list(APPEND MENU_LIBS SDL2::SDL2)
 
 if(TARGET SDL2::SDL2_ttf)
     list(APPEND MENU_LIBS SDL2::SDL2_ttf)

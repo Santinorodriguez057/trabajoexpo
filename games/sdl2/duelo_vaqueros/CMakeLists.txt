@@ -4,10 +4,11 @@ find_package(SDL2_mixer REQUIRED)
 
 add_executable(duelo_vaqueros src/main.cpp)
 
-set(DUELO_LIBS SDL2::SDL2)
+set(DUELO_LIBS)
 if(TARGET SDL2::SDL2main)
     list(APPEND DUELO_LIBS SDL2::SDL2main)
 endif()
+list(APPEND DUELO_LIBS SDL2::SDL2)
 
 if(TARGET SDL2::SDL2_ttf)
     list(APPEND DUELO_LIBS SDL2::SDL2_ttf)

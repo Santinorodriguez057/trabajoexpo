@@ -3,10 +3,11 @@ find_package(SDL2_ttf REQUIRED)
 
 add_executable(test_mando src/main.cpp)
 
-set(TEST_MANDO_LIBS SDL2::SDL2)
+set(TEST_MANDO_LIBS)
 if(TARGET SDL2::SDL2main)
     list(APPEND TEST_MANDO_LIBS SDL2::SDL2main)
 endif()
+list(APPEND TEST_MANDO_LIBS SDL2::SDL2)
 
 if(TARGET SDL2::SDL2_ttf)
     list(APPEND TEST_MANDO_LIBS SDL2::SDL2_ttf)

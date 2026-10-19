@@ -1,4 +1,5 @@
 #include "menu.h"
+#include <cmath>
 
 Menu::Menu(SDL_Renderer* renderer, TTF_Font* font, const std::vector<GameEntry>& games)
     : renderer_(renderer), font_(font), games_(games) {

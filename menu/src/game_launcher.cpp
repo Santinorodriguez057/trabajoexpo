@@ -1,4 +1,5 @@
 #include "game_launcher.h"
+#include <vector>
 
 #if defined(_WIN32)
 #include <windows.h>
