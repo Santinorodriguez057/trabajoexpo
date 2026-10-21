@@ -3,10 +3,10 @@
 #include <string>
 
 struct GameConfig {
-    float sensitivityX = 1.0f;
-    float sensitivityY = 1.0f;
-    float smoothing = 0.5f;       // 0.0 (direct) to 0.9 (heavy smoothing)
-    float deadzone = 0.04f;       // rad/s gyro deadzone
+    float sensitivityX = 1.6f;
+    float sensitivityY = 1.4f;
+    float smoothing = 0.35f;      // 0.0 (directo) a 0.9 (suavizado alto)
+    float deadzone = 0.015f;      // deadzone optimizada para micro-apuntado suave
     bool invertY = false;
     bool rumbleEnabled = true;
     int highRecord = 0;

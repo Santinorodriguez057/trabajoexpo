@@ -7,6 +7,7 @@
 #include "config.h"
 #include "input.h"
 #include "audio.h"
+#include "theme.hpp"
 
 struct StuckArrow {
     float localX; // Desplazamiento respecto al centro de la diana
@@ -74,6 +75,7 @@ private:
     void drawText(TTF_Font* font, const std::string& text, int x, int y, SDL_Color color, bool center = false);
     void drawCircleFilled(int cx, int cy, int radius, SDL_Color color);
     void drawCircleOutline(int cx, int cy, int radius, SDL_Color color);
+    void drawFlat(float cx, float cy, float w, float h, float angle, SDL_Color color);
 
     // Proyección 3D a pantalla 1920x1080
     SDL_Point project3D(float x, float y, float z);
@@ -118,8 +120,15 @@ private:
     // Animación de cuerda del arco
     float stringVibration_ = 0.0f;
     float stringVibeTimer_ = 0.0f;
-    float drawNockOffset_ = 0.0f;
 
     // Menú de pausa
     int pauseMenuIndex_ = 0;
+
+    // Variables de tiempo, viento y temblor
+    float roundTime_ = 0.0f;
+    float screenShakeTrauma_ = 0.0f;
+    float windSpeed_ = 0.0f;
+    float windX_ = 0.0f;
+    float windY_ = 0.0f;
+    std::string windLabel_ = "0.0 M/S";
 };

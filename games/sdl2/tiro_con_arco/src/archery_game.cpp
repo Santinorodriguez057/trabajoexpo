@@ -4,18 +4,24 @@
 #include <cstdio>
 #include <cstdlib>
 
+using namespace ArcheryTheme;
+
 ArcheryGame::ArcheryGame(SDL_Renderer* ren, TTF_Font* fontLarge, TTF_Font* fontMed, TTF_Font* fontSmall, GameConfig& config)
     : ren_(ren), fontLarge_(fontLarge), fontMed_(fontMed), fontSmall_(fontSmall), config_(config), input_(config) {
 }
 
 ArcheryGame::~ArcheryGame() {
-    config_.save();
+    if (EXTRA_ENABLE_SAVED_RECORD) {
+        config_.save();
+    }
 }
 
 int ArcheryGame::run() {
     input_.init();
     audio_.init();
-    config_.load();
+    if (EXTRA_ENABLE_SAVED_RECORD) {
+        config_.load();
+    }
 
     startRound(1);
     state_ = GameState::CALIBRATION;
@@ -27,6 +33,8 @@ int ArcheryGame::run() {
         float dt = (currentTime - lastTime) / 1000.0f;
         if (dt > 0.05f) dt = 0.05f;
         lastTime = currentTime;
+
+        roundTime_ += dt;
 
         handleEvents();
         update(dt);
@@ -45,24 +53,39 @@ void ArcheryGame::startRound(int roundNumber) {
     stuckArrows_.clear();
     activeArrow_.active = false;
 
-    // Distancia progresiva con ligera aleatoriedad
-    // Rondas 1-3: 18m - 28m
-    // Rondas 4-7: 32m - 48m
-    // Rondas 8-10: 52m - 70m
+    // Distancia progresiva de la diana
     float baseDist = 18.0f + (roundNumber - 1) * 5.5f;
     float distVariation = ((rand() % 100) / 100.0f - 0.5f) * 4.0f;
     targetDistance_ = std::clamp(baseDist + distVariation, 15.0f, 75.0f);
 
     // Variación horizontal y de altura en rondas intermedias y avanzadas
     if (roundNumber > 2) {
-        targetX_ = ((rand() % 100) / 100.0f - 0.5f) * 2.2f;
-        targetY_ = 1.3f + ((rand() % 100) / 100.0f - 0.5f) * 0.6f;
+        targetX_ = ((rand() % 100) / 100.0f - 0.5f) * 2.0f;
+        targetY_ = 1.3f + ((rand() % 100) / 100.0f - 0.5f) * 0.5f;
     } else {
         targetX_ = 0.0f;
         targetY_ = 1.3f;
     }
 
-    targetRadius_ = 0.85f; // Radio visual cómodo para tiro con arco
+    targetRadius_ = 0.85f; // Radio visual oficial cómodo
+
+    // Viento aleatorio por ronda (Extra 5)
+    if (EXTRA_ENABLE_WIND) {
+        float speed = (rand() % 45) / 10.0f; // 0.0 a 4.5 m/s
+        int dirSign = (rand() % 2 == 0) ? 1 : -1;
+        windX_ = speed * dirSign;
+        windY_ = ((rand() % 20) / 10.0f - 1.0f) * 0.4f;
+        windSpeed_ = speed;
+
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.1f M/S %s", speed, dirSign > 0 ? "➔" : "⬅");
+        windLabel_ = (speed < 0.3f) ? "CALMA (0.0 M/S)" : std::string(buf);
+    } else {
+        windX_ = 0.0f;
+        windY_ = 0.0f;
+        windSpeed_ = 0.0f;
+        windLabel_ = "SIN VIENTO";
+    }
 }
 
 void ArcheryGame::handleEvents() {
@@ -77,57 +100,55 @@ void ArcheryGame::handleEvents() {
 
         input_.handleEvent(ev);
 
-        // Controles de navegación en menús
+        // Control específico de navegación en el Menú de Ajustes (Paso 3)
         if (state_ == GameState::PAUSE_MENU) {
             if (ev.type == SDL_KEYDOWN) {
-                if (ev.key.keysym.sym == SDLK_UP) pauseMenuIndex_ = (pauseMenuIndex_ + 6) % 7;
-                else if (ev.key.keysym.sym == SDLK_DOWN) pauseMenuIndex_ = (pauseMenuIndex_ + 1) % 7;
-                else if (ev.key.keysym.sym == SDLK_LEFT) {
-                    if (pauseMenuIndex_ == 0) config_.sensitivityX = std::max(0.2f, config_.sensitivityX - 0.1f);
-                    else if (pauseMenuIndex_ == 1) config_.sensitivityY = std::max(0.2f, config_.sensitivityY - 0.1f);
-                    else if (pauseMenuIndex_ == 2) config_.smoothing = std::max(0.0f, config_.smoothing - 0.05f);
-                    else if (pauseMenuIndex_ == 3) config_.deadzone = std::max(0.0f, config_.deadzone - 0.01f);
-                    else if (pauseMenuIndex_ == 4) config_.invertY = !config_.invertY;
-                    else if (pauseMenuIndex_ == 5) config_.rumbleEnabled = !config_.rumbleEnabled;
-                } else if (ev.key.keysym.sym == SDLK_RIGHT) {
-                    if (pauseMenuIndex_ == 0) config_.sensitivityX = std::min(3.0f, config_.sensitivityX + 0.1f);
-                    else if (pauseMenuIndex_ == 1) config_.sensitivityY = std::min(3.0f, config_.sensitivityY + 0.1f);
-                    else if (pauseMenuIndex_ == 2) config_.smoothing = std::min(0.9f, config_.smoothing + 0.05f);
-                    else if (pauseMenuIndex_ == 3) config_.deadzone = std::min(0.2f, config_.deadzone + 0.01f);
-                    else if (pauseMenuIndex_ == 4) config_.invertY = !config_.invertY;
-                    else if (pauseMenuIndex_ == 5) config_.rumbleEnabled = !config_.rumbleEnabled;
+                if (ev.key.keysym.sym == SDLK_UP) {
+                    pauseMenuIndex_ = (pauseMenuIndex_ + 3) % 4;
+                } else if (ev.key.keysym.sym == SDLK_DOWN) {
+                    pauseMenuIndex_ = (pauseMenuIndex_ + 1) % 4;
                 } else if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_SPACE) {
-                    if (pauseMenuIndex_ == 6) {
-                        // Reanudar
+                    // Ejecutar opción seleccionada
+                    if (pauseMenuIndex_ == 0) {
+                        // Continuar
                         state_ = GameState::PLAYING;
-                        config_.save();
+                    } else if (pauseMenuIndex_ == 1) {
+                        // Calibrar centro
+                        input_.calibrate();
+                        state_ = GameState::PLAYING;
+                    } else if (pauseMenuIndex_ == 2) {
+                        // Volver al menú principal
+                        running_ = false;
+                    } else if (pauseMenuIndex_ == 3) {
+                        // Salir
+                        running_ = false;
+                        std::exit(0);
                     }
+                } else if (ev.key.keysym.sym == SDLK_ESCAPE) {
+                    state_ = GameState::PLAYING;
                 }
             } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
-                if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP) pauseMenuIndex_ = (pauseMenuIndex_ + 6) % 7;
-                else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) pauseMenuIndex_ = (pauseMenuIndex_ + 1) % 7;
-                else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT) {
-                    if (pauseMenuIndex_ == 0) config_.sensitivityX = std::max(0.2f, config_.sensitivityX - 0.1f);
-                    else if (pauseMenuIndex_ == 1) config_.sensitivityY = std::max(0.2f, config_.sensitivityY - 0.1f);
-                    else if (pauseMenuIndex_ == 2) config_.smoothing = std::max(0.0f, config_.smoothing - 0.05f);
-                    else if (pauseMenuIndex_ == 3) config_.deadzone = std::max(0.0f, config_.deadzone - 0.01f);
-                    else if (pauseMenuIndex_ == 4) config_.invertY = !config_.invertY;
-                    else if (pauseMenuIndex_ == 5) config_.rumbleEnabled = !config_.rumbleEnabled;
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) {
-                    if (pauseMenuIndex_ == 0) config_.sensitivityX = std::min(3.0f, config_.sensitivityX + 0.1f);
-                    else if (pauseMenuIndex_ == 1) config_.sensitivityY = std::min(3.0f, config_.sensitivityY + 0.1f);
-                    else if (pauseMenuIndex_ == 2) config_.smoothing = std::min(0.9f, config_.smoothing + 0.05f);
-                    else if (pauseMenuIndex_ == 3) config_.deadzone = std::min(0.2f, config_.deadzone + 0.01f);
-                    else if (pauseMenuIndex_ == 4) config_.invertY = !config_.invertY;
-                    else if (pauseMenuIndex_ == 5) config_.rumbleEnabled = !config_.rumbleEnabled;
+                if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP) {
+                    pauseMenuIndex_ = (pauseMenuIndex_ + 3) % 4;
+                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
+                    pauseMenuIndex_ = (pauseMenuIndex_ + 1) % 4;
                 } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
-                    if (pauseMenuIndex_ == 6) {
+                    // X en DualShock (Confirmar)
+                    if (pauseMenuIndex_ == 0) {
                         state_ = GameState::PLAYING;
-                        config_.save();
+                    } else if (pauseMenuIndex_ == 1) {
+                        input_.calibrate();
+                        state_ = GameState::PLAYING;
+                    } else if (pauseMenuIndex_ == 2) {
+                        running_ = false;
+                    } else if (pauseMenuIndex_ == 3) {
+                        running_ = false;
+                        std::exit(0);
                     }
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B) {
+                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B || 
+                           ev.cbutton.button == SDL_CONTROLLER_BUTTON_START) {
+                    // Círculo o START: Continuar / Cerrar menú
                     state_ = GameState::PLAYING;
-                    config_.save();
                 }
             }
         }
@@ -138,28 +159,33 @@ void ArcheryGame::update(float dt) {
     input_.update(dt);
     const AimState& aim = input_.getState();
 
-    // Gestión del sonido y animación de tensar
+    // Gestión del sonido al tensar (sin vibrar para no interferir con el giroscopio)
     if (state_ == GameState::PLAYING && aim.isDrawing) {
         audio_.playDraw(aim.tension);
     }
 
-    // Vibración de la cuerda del arco al disparar
+    // Vibración de la cuerda al soltar
     if (stringVibeTimer_ > 0.0f) {
         stringVibeTimer_ -= dt;
-        stringVibration_ = std::sin(stringVibeTimer_ * 55.0f) * (stringVibeTimer_ / 0.35f);
+        stringVibration_ = std::sin(stringVibeTimer_ * 60.0f) * (stringVibeTimer_ / 0.35f);
     } else {
         stringVibration_ = 0.0f;
     }
 
-    // Wobble de la diana por impacto
+    // Oscilación de impacto en la diana
     if (targetWobble_ > 0.0f) {
         targetWobble_ = std::max(0.0f, targetWobble_ - dt * 3.5f);
+    }
+
+    // Amortiguación del temblor de pantalla (Screen Shake)
+    if (screenShakeTrauma_ > 0.0f) {
+        screenShakeTrauma_ = std::max(0.0f, screenShakeTrauma_ - dt * 2.8f);
     }
 
     // Actualizar textos flotantes
     for (auto it = floatingTexts_.begin(); it != floatingTexts_.end();) {
         it->life -= dt;
-        it->y -= dt * 45.0f; // Sube suavemente
+        it->y -= dt * 25.0f; // Suben suavemente
         if (it->life <= 0.0f) {
             it = floatingTexts_.erase(it);
         } else {
@@ -167,6 +193,7 @@ void ArcheryGame::update(float dt) {
         }
     }
 
+    // 2. Máquina de Estados del Juego
     switch (state_) {
         case GameState::CALIBRATION:
             if (input_.confirmPressed()) {
@@ -176,25 +203,34 @@ void ArcheryGame::update(float dt) {
             break;
 
         case GameState::PLAYING:
+            // Abrir menú de pausa con START o ESC
             if (input_.pausePressed()) {
                 state_ = GameState::PAUSE_MENU;
                 pauseMenuIndex_ = 0;
                 break;
             }
 
-            // Disparar flecha cuando R2 se suelta
+            // Disparar flecha al soltar R2
             if (aim.justFired && !activeArrow_.active && arrowsRemaining_ > 0) {
                 shootArrow(aim.releaseTension);
+                if (EXTRA_ENABLE_RUMBLE) {
+                    input_.setRumble(0.85f, 1.0f, 130); // Pulso seco al soltar
+                }
             }
 
-            // Simulación física de la flecha en vuelo
+            // Simulación balística de la flecha en vuelo
             if (activeArrow_.active) {
-                // Guardar estela
                 SDL_Point pScreen = project3D(activeArrow_.x, activeArrow_.y, activeArrow_.z);
                 activeArrow_.trail.push_back({static_cast<float>(pScreen.x), static_cast<float>(pScreen.y)});
                 if (activeArrow_.trail.size() > 18) activeArrow_.trail.erase(activeArrow_.trail.begin());
 
-                // Integración balística con gravedad
+                // Desvío por viento en vuelo (Extra 5)
+                if (EXTRA_ENABLE_WIND) {
+                    activeArrow_.vx += windX_ * dt * 0.22f;
+                    activeArrow_.vy += windY_ * dt * 0.22f;
+                }
+
+                // Gravedad
                 activeArrow_.vy -= 9.8f * dt;
                 activeArrow_.x += activeArrow_.vx * dt;
                 activeArrow_.y += activeArrow_.vy * dt;
@@ -208,14 +244,13 @@ void ArcheryGame::update(float dt) {
                     arrowsRemaining_--;
 
                     if (arrowsRemaining_ <= 0) {
-                        // Fin de la ronda
                         if (currentRound_ < kTotalRounds) {
                             state_ = GameState::ROUND_SUMMARY;
                             audio_.playFanfare();
                         } else {
                             state_ = GameState::MATCH_OVER;
                             audio_.playFanfare();
-                            if (totalScore_ > config_.highRecord) {
+                            if (EXTRA_ENABLE_SAVED_RECORD && totalScore_ > config_.highRecord) {
                                 isNewRecord_ = true;
                                 config_.highRecord = totalScore_;
                                 config_.save();
@@ -230,14 +265,13 @@ void ArcheryGame::update(float dt) {
             if (input_.confirmPressed()) {
                 startRound(currentRound_ + 1);
                 state_ = GameState::PLAYING;
-            } else if (input_.cancelPressed()) {
-                running_ = false; // Salir al menú
+            } else if (input_.cancelPressed() || input_.pausePressed()) {
+                running_ = false; // Volver al menú
             }
             break;
 
         case GameState::MATCH_OVER:
             if (input_.confirmPressed()) {
-                // Nueva partida
                 totalScore_ = 0;
                 totalHits_ = 0;
                 totalBullseyes_ = 0;
@@ -245,24 +279,18 @@ void ArcheryGame::update(float dt) {
                 isNewRecord_ = false;
                 startRound(1);
                 state_ = GameState::PLAYING;
-            } else if (input_.cancelPressed()) {
+            } else if (input_.cancelPressed() || input_.pausePressed()) {
                 running_ = false;
             }
             break;
 
         case GameState::PAUSE_MENU:
-            if (input_.cancelPressed() || input_.pausePressed()) {
-                state_ = GameState::PLAYING;
-                config_.save();
-            }
             break;
     }
 }
 
 void ArcheryGame::shootArrow(float tension) {
     audio_.playShoot();
-
-    // Animación de rebote de la cuerda
     stringVibeTimer_ = 0.35f;
 
     const AimState& aim = input_.getState();
@@ -270,17 +298,15 @@ void ArcheryGame::shootArrow(float tension) {
     activeArrow_.active = true;
     activeArrow_.trail.clear();
 
-    // Punto de origen del arco en coordenadas 3D (a la derecha y abajo de la cámara)
-    activeArrow_.x = 0.20f;
+    // El arco ahora está centrado en la vista del arquero
+    activeArrow_.x = 0.0f;
     activeArrow_.y = 1.05f;
     activeArrow_.z = 0.6f;
 
-    // Velocidad de salida según la tensión alcanzada (35 m/s a 80 m/s)
+    // Velocidad según tensión (35 a 80 m/s)
     float speed = 35.0f + tension * 45.0f;
     activeArrow_.initialSpeed = speed;
 
-    // Dirección hacia el punto de mira proyectado en el plano de la diana
-    // aim.x y aim.y representan el ángulo de orientación del DualShock
     float aimWorldX = targetX_ + aim.x * (targetDistance_ * 0.14f);
     float aimWorldY = targetY_ - aim.y * (targetDistance_ * 0.12f);
 
@@ -302,79 +328,77 @@ void ArcheryGame::evaluateImpact(float hitX, float hitY) {
     SDL_Point screenHit = project3D(targetX_, targetY_, targetDistance_);
 
     if (dist <= targetRadius_) {
-        // Impacto válido en la diana
         totalHits_++;
         targetWobble_ = 1.0f;
 
-        // Calcular puntuación según anillos oficiales de arquería (10 zonas concéntricas)
         float rFrac = dist / targetRadius_;
         int pts = 0;
         std::string label;
         SDL_Color color;
 
         if (rFrac <= 0.10f) {
-            // Diana perfecta (X-ring)
             pts = 100;
             label = "¡CENTRO PERFECTO! +100";
-            color = {255, 220, 40, 255};
+            color = COLOR_ACCENT_GOLD;
             totalBullseyes_++;
             audio_.playBullseye();
-            input_.setRumble(1.0f, 1.0f, 250);
+            if (EXTRA_ENABLE_RUMBLE) input_.setRumble(1.0f, 1.0f, 250);
+            if (EXTRA_ENABLE_FLOATING_TEXTS) screenShakeTrauma_ = 1.0f;
             input_.setLED(255, 230, 80);
         } else if (rFrac <= 0.20f) {
-            // Anillo 9 (Oro)
             pts = 80;
             label = "¡DIANA DORADA! +80";
-            color = {255, 205, 30, 255};
+            color = COLOR_ACCENT_GOLD;
             audio_.playBullseye();
-            input_.setRumble(0.7f, 0.9f, 200);
-            input_.setLED(255, 200, 30);
+            if (EXTRA_ENABLE_RUMBLE) input_.setRumble(0.7f, 0.9f, 200);
+            if (EXTRA_ENABLE_FLOATING_TEXTS) screenShakeTrauma_ = 0.8f;
+            input_.setLED(255, 205, 30);
         } else if (rFrac <= 0.40f) {
-            // Anillos 8 y 7 (Rojo)
             pts = (rFrac <= 0.30f) ? 60 : 50;
             label = "ZONA ROJA +" + std::to_string(pts);
-            color = {235, 60, 60, 255};
+            color = COLOR_ACCENT_RED;
             audio_.playImpact();
-            input_.setRumble(0.5f, 0.6f, 160);
+            if (EXTRA_ENABLE_RUMBLE) input_.setRumble(0.5f, 0.6f, 160);
+            if (EXTRA_ENABLE_FLOATING_TEXTS) screenShakeTrauma_ = 0.5f;
         } else if (rFrac <= 0.60f) {
-            // Anillos 6 y 5 (Azul)
             pts = (rFrac <= 0.50f) ? 40 : 30;
             label = "ZONA AZUL +" + std::to_string(pts);
-            color = {40, 160, 240, 255};
+            color = COLOR_ACCENT_BLUE;
             audio_.playImpact();
-            input_.setRumble(0.4f, 0.5f, 140);
+            if (EXTRA_ENABLE_RUMBLE) input_.setRumble(0.4f, 0.5f, 140);
+            if (EXTRA_ENABLE_FLOATING_TEXTS) screenShakeTrauma_ = 0.35f;
         } else if (rFrac <= 0.80f) {
-            // Anillos 4 y 3 (Negro)
             pts = (rFrac <= 0.70f) ? 20 : 15;
             label = "ZONA NEGRA +" + std::to_string(pts);
-            color = {180, 180, 190, 255};
+            color = COLOR_TEXT_MUTED;
             audio_.playImpact();
-            input_.setRumble(0.3f, 0.4f, 120);
+            if (EXTRA_ENABLE_RUMBLE) input_.setRumble(0.3f, 0.4f, 120);
+            if (EXTRA_ENABLE_FLOATING_TEXTS) screenShakeTrauma_ = 0.25f;
         } else {
-            // Anillos 2 y 1 (Blanco)
             pts = (rFrac <= 0.90f) ? 10 : 5;
             label = "ZONA BLANCA +" + std::to_string(pts);
-            color = {240, 240, 245, 255};
+            color = COLOR_TEXT_MAIN;
             audio_.playImpact();
-            input_.setRumble(0.2f, 0.3f, 100);
+            if (EXTRA_ENABLE_RUMBLE) input_.setRumble(0.2f, 0.3f, 100);
+            if (EXTRA_ENABLE_FLOATING_TEXTS) screenShakeTrauma_ = 0.15f;
         }
 
         totalScore_ += pts;
         roundScore_ += pts;
         if (pts > bestShotPoints_) bestShotPoints_ = pts;
 
-        // Registrar flecha clavada en la diana
         float angle = ((rand() % 60) - 30) * 0.01f;
         stuckArrows_.push_back({diffX, diffY, angle});
 
-        // Banner flotante animado de impacto
-        floatingTexts_.push_back({label, static_cast<float>(screenHit.x), static_cast<float>(screenHit.y - 70), 2.2f, 2.2f, color, 1.2f});
-
+        if (EXTRA_ENABLE_FLOATING_TEXTS) {
+            floatingTexts_.push_back({label, static_cast<float>(screenHit.x), static_cast<float>(screenHit.y - 70), 2.2f, 2.2f, color, 1.2f});
+        }
     } else {
-        // Fallo fuera de la diana
         audio_.playImpact();
-        input_.setRumble(0.2f, 0.2f, 80);
-        floatingTexts_.push_back({"FALLO 0", static_cast<float>(screenHit.x), static_cast<float>(screenHit.y - 40), 1.8f, 1.8f, {200, 70, 70, 255}, 1.0f});
+        if (EXTRA_ENABLE_RUMBLE) input_.setRumble(0.2f, 0.2f, 80);
+        if (EXTRA_ENABLE_FLOATING_TEXTS) {
+            floatingTexts_.push_back({"FALLO 0", static_cast<float>(screenHit.x), static_cast<float>(screenHit.y - 40), 1.8f, 1.8f, COLOR_ACCENT_RED, 1.0f});
+        }
     }
 }
 
@@ -382,7 +406,7 @@ SDL_Point ArcheryGame::project3D(float x, float y, float z) {
     if (z <= 0.1f) z = 0.1f;
     const float fov = 2200.0f;
     int px = 960 + static_cast<int>((x / z) * fov);
-    int py = 540 - static_cast<int>(((y - 1.3f) / z) * fov);
+    int py = HORIZON_Y - static_cast<int>(((y - 1.3f) / z) * fov);
     return {px, py};
 }
 
@@ -396,9 +420,32 @@ void ArcheryGame::drawText(TTF_Font* font, const std::string& text, int x, int y
 
     int w, h;
     SDL_QueryTexture(tex, nullptr, nullptr, &w, &h);
-    SDL_Rect dst = {center ? x - w / 2 : x, y, w, h};
+    SDL_Rect dst = {center ? x - w / 2 : x, y - h / 2, w, h};
     SDL_RenderCopy(ren_, tex, nullptr, &dst);
     SDL_DestroyTexture(tex);
+}
+
+void ArcheryGame::drawFlat(float cx, float cy, float w, float h, float angle, SDL_Color color) {
+    SDL_SetRenderDrawColor(ren_, color.r, color.g, color.b, color.a);
+    SDL_Rect r = { static_cast<int>(cx - w / 2.0f), static_cast<int>(cy - h / 2.0f), static_cast<int>(w), static_cast<int>(h) };
+    if (std::abs(angle) < 0.1f) {
+        SDL_RenderFillRect(ren_, &r);
+    } else {
+        // Rotación con primitivas de 45°
+        float rad = angle * 3.14159f / 180.0f;
+        float cosA = std::cos(rad);
+        float sinA = std::sin(rad);
+        int halfW = static_cast<int>(w / 2.0f);
+        int halfH = static_cast<int>(h / 2.0f);
+        for (int py = -halfH; py <= halfH; py += 2) {
+            int px1 = static_cast<int>(-halfW * cosA - py * sinA);
+            int py1 = static_cast<int>(-halfW * sinA + py * cosA);
+            int px2 = static_cast<int>(halfW * cosA - py * sinA);
+            int py2 = static_cast<int>(halfW * sinA + py * cosA);
+            SDL_RenderDrawLine(ren_, static_cast<int>(cx + px1), static_cast<int>(cy + py1),
+                                     static_cast<int>(cx + px2), static_cast<int>(cy + py2));
+        }
+    }
 }
 
 void ArcheryGame::drawCircleFilled(int cx, int cy, int radius, SDL_Color color) {
@@ -442,7 +489,17 @@ void ArcheryGame::drawCircleOutline(int cx, int cy, int radius, SDL_Color color)
 }
 
 void ArcheryGame::render() {
-    SDL_SetRenderDrawColor(ren_, 15, 20, 25, 255);
+    // Cálculo de temblor de pantalla (Screen Shake)
+    int shakeX = 0;
+    int shakeY = 0;
+    if (EXTRA_ENABLE_FLOATING_TEXTS && screenShakeTrauma_ > 0.0f) {
+        float shakeMag = screenShakeTrauma_ * screenShakeTrauma_ * 14.0f;
+        shakeX = static_cast<int>(std::sin(roundTime_ * 45.0f) * shakeMag);
+        shakeY = static_cast<int>(std::cos(roundTime_ * 55.0f) * shakeMag * 0.7f);
+    }
+
+    // Fondo base
+    SDL_SetRenderDrawColor(ren_, COLOR_BG.r, COLOR_BG.g, COLOR_BG.b, 255);
     SDL_RenderClear(ren_);
 
     renderBackground();
@@ -451,12 +508,18 @@ void ArcheryGame::render() {
     renderFirstPersonBow();
     renderHUD();
 
-    // Renderizar textos flotantes
+    // Renderizar textos flotantes de puntuación
     for (const auto& ft : floatingTexts_) {
-        float alpha = std::clamp(ft.life / (ft.maxLife * 0.4f), 0.0f, 1.0f);
-        SDL_Color c = ft.color;
-        c.a = static_cast<Uint8>(alpha * 255.0f);
-        drawText(fontMed_, ft.text, static_cast<int>(ft.x), static_cast<int>(ft.y), c, true);
+        float alpha = std::clamp(ft.life / (ft.maxLife * 0.35f), 0.0f, 1.0f);
+        if (alpha > 0.05f) {
+            int tx = static_cast<int>(ft.x) + shakeX;
+            int ty = static_cast<int>(ft.y) + shakeY;
+            // Badge flotante estilo brutalista
+            int tagW = 280;
+            int tagH = 46;
+            drawBrutalistBox(ren_, tx - tagW / 2, ty - tagH / 2, tagW, tagH, false, COLOR_CARD_BG, ft.color, 6);
+            drawText(fontMed_, ft.text, tx, ty, ft.color, true);
+        }
     }
 
     if (state_ == GameState::CALIBRATION) renderCalibrationScreen();
@@ -468,49 +531,75 @@ void ArcheryGame::render() {
 }
 
 void ArcheryGame::renderBackground() {
-    // 1. Cielo con degradado sereno
-    for (int y = 0; y < 540; ++y) {
-        float t = y / 540.0f;
-        Uint8 r = static_cast<Uint8>(24 + t * 60);
-        Uint8 g = static_cast<Uint8>(65 + t * 90);
-        Uint8 b = static_cast<Uint8>(120 + t * 65);
-        SDL_SetRenderDrawColor(ren_, r, g, b, 255);
-        SDL_RenderDrawLine(ren_, 0, y, 1920, y);
+    // 1. Cielo con Cuadrícula Dinámica (Estilo Duelo de Vaqueros)
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(ren_, COLOR_GRID.r, COLOR_GRID.g, COLOR_GRID.b, COLOR_GRID.a);
+    int gridOffset = static_cast<int>(roundTime_ * 15.0f) % 60;
+    for (int x = gridOffset - 60; x < 1920; x += 60) SDL_RenderDrawLine(ren_, x, 0, x, HORIZON_Y);
+    for (int y = gridOffset - 60; y < HORIZON_Y; y += 60) SDL_RenderDrawLine(ren_, 0, y, 1920, y);
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
+
+    // 2. Sol Centrado con Ondas de Calor (Mirage)
+    float heatWave = std::sin(roundTime_ * 5.0f) * 3.5f;
+    float sunX = 960.0f;
+    float sunY = 230.0f + heatWave;
+    float sunSize = 130.0f + std::sin(roundTime_ * 3.0f) * 4.0f;
+    drawFlat(sunX, sunY, sunSize, sunSize, 0.0f, COLOR_SUN);
+    drawFlat(sunX, sunY, sunSize, sunSize, 45.0f, COLOR_SUN);
+    for (int i = 0; i < 12; i++) {
+        float a = i * 30.0f + roundTime_ * 4.0f;
+        float rad = a * 3.14159f / 180.0f;
+        float rayLen = 32.0f + std::sin(roundTime_ * 6.0f + i) * 5.0f;
+        drawFlat(sunX + std::cos(rad) * 88.0f, sunY + std::sin(rad) * 88.0f, rayLen, 12.0f, a, COLOR_SUN);
     }
 
-    // 2. Siluetas de montañas lejanas
-    SDL_SetRenderDrawColor(ren_, 45, 80, 95, 255);
-    for (int x = 0; x < 1920; x += 3) {
-        int mountainY = 480 - static_cast<int>(std::sin(x * 0.003f) * 70.0f + std::cos(x * 0.009f) * 40.0f);
-        SDL_RenderDrawLine(ren_, x, mountainY, x, 540);
-    }
+    // 3. Nubes Flotantes Planas
+    float cloudDrift = std::fmod(roundTime_ * 8.0f, 2400.0f);
+    drawFlat(200.0f + cloudDrift * 0.5f, 130.0f, 140.0f, 26.0f, 0.0f, COLOR_CLOUD);
+    drawFlat(220.0f + cloudDrift * 0.5f, 105.0f, 75.0f, 26.0f, 0.0f, COLOR_CLOUD);
+    drawFlat(1600.0f - cloudDrift * 0.3f, 220.0f, 180.0f, 32.0f, 0.0f, COLOR_CLOUD);
+    drawFlat(1640.0f - cloudDrift * 0.3f, 190.0f, 90.0f, 32.0f, 0.0f, COLOR_CLOUD);
+    drawFlat(850.0f + cloudDrift * 0.4f, 150.0f, 110.0f, 26.0f, 0.0f, COLOR_CLOUD);
 
-    // 3. Suelo de césped con perspectiva
-    for (int y = 540; y < 1080; ++y) {
-        float t = (y - 540) / 540.0f;
-        Uint8 r = static_cast<Uint8>(35 + t * 30);
-        Uint8 g = static_cast<Uint8>(100 + t * 65);
-        Uint8 b = static_cast<Uint8>(40 + t * 25);
-        SDL_SetRenderDrawColor(ren_, r, g, b, 255);
-        SDL_RenderDrawLine(ren_, 0, y, 1920, y);
-    }
+    // 4. Siluetas de Colinas y Mesas lejanas (Neo-Brutalistas)
+    drawFlat(220.0f, 510.0f, 260.0f, 40.0f, 0.0f, COLOR_HILLS);
+    drawFlat(190.0f, 475.0f, 170.0f, 35.0f, 0.0f, COLOR_HILLS);
+    drawFlat(150.0f, 395.0f, 85.0f, 190.0f, 0.0f, COLOR_HILLS);
+    drawFlat(1700.0f, 520.0f, 200.0f, 200.0f, 45.0f, COLOR_HILLS);
+    drawFlat(1820.0f, 535.0f, 140.0f, 140.0f, 45.0f, COLOR_HILLS);
 
-    // Líneas de carril de tiro hacia el punto de fuga
-    SDL_SetRenderDrawColor(ren_, 80, 160, 90, 80);
-    SDL_RenderDrawLine(ren_, 960, 540, 200, 1080);
-    SDL_RenderDrawLine(ren_, 960, 540, 1720, 1080);
-    SDL_RenderDrawLine(ren_, 960, 540, 600, 1080);
-    SDL_RenderDrawLine(ren_, 960, 540, 1320, 1080);
+    // 5. Suelo Llanura
+    SDL_SetRenderDrawColor(ren_, COLOR_GROUND.r, COLOR_GROUND.g, COLOR_GROUND.b, 255);
+    SDL_Rect groundRect = {0, HORIZON_Y, 1920, 1080 - HORIZON_Y};
+    SDL_RenderFillRect(ren_, &groundRect);
 
-    // Banderines de distancia (20m, 30m, 50m, 70m)
+    // 6. Línea de horizonte negra pura brutalista de 4px
+    SDL_SetRenderDrawColor(ren_, COLOR_HORIZON.r, COLOR_HORIZON.g, COLOR_HORIZON.b, 255);
+    SDL_Rect horizLine = {0, HORIZON_Y - 2, 1920, HORIZON_THICK};
+    SDL_RenderFillRect(ren_, &horizLine);
+
+    // 7. Carriles de tiro hacia el horizonte
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(ren_, 0, 0, 0, 18);
+    SDL_RenderDrawLine(ren_, 960, HORIZON_Y, 200, 1080);
+    SDL_RenderDrawLine(ren_, 960, HORIZON_Y, 1720, 1080);
+    SDL_RenderDrawLine(ren_, 960, HORIZON_Y, 600, 1080);
+    SDL_RenderDrawLine(ren_, 960, HORIZON_Y, 1320, 1080);
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
+
+    // Banderines de distancia
     std::vector<float> distMarkers = {20.0f, 30.0f, 50.0f, 70.0f};
     for (float d : distMarkers) {
-        SDL_Point mP = project3D(-2.8f, 1.3f, d);
-        if (mP.y >= 540 && mP.y <= 1060) {
-            SDL_SetRenderDrawColor(ren_, 240, 240, 240, 200);
+        SDL_Point mP = project3D(-3.0f, 1.3f, d);
+        if (mP.y >= HORIZON_Y && mP.y <= 1060) {
+            SDL_SetRenderDrawColor(ren_, COLOR_BORDER.r, COLOR_BORDER.g, COLOR_BORDER.b, 255);
             SDL_RenderDrawLine(ren_, mP.x, mP.y, mP.x, mP.y - 25);
-            std::string markerTxt = std::to_string(static_cast<int>(d)) + "m";
-            drawText(fontSmall_, markerTxt, mP.x + 5, mP.y - 30, {220, 230, 240, 220});
+            SDL_RenderDrawLine(ren_, mP.x + 1, mP.y, mP.x + 1, mP.y - 25);
+            // Pequeña bandera triangular
+            SDL_RenderDrawLine(ren_, mP.x, mP.y - 25, mP.x + 12, mP.y - 20);
+            SDL_RenderDrawLine(ren_, mP.x + 12, mP.y - 20, mP.x, mP.y - 15);
+            std::string markerTxt = std::to_string(static_cast<int>(d)) + "M";
+            drawText(fontSmall_, markerTxt, mP.x + 18, mP.y - 20, COLOR_TEXT_MUTED);
         }
     }
 }
@@ -523,55 +612,64 @@ void ArcheryGame::renderTarget() {
     int radiusPx = static_cast<int>((targetRadius_ / targetDistance_) * fov);
     if (radiusPx < 6) radiusPx = 6;
 
-    // 1. Patas de madera del trípode (A-Frame)
+    // 1. Patas de madera del trípode (A-Frame con contornos negros brutalistas)
     int legBottomY = center.y + static_cast<int>(radiusPx * 1.7f);
-    SDL_SetRenderDrawColor(ren_, 115, 75, 45, 255);
-    SDL_RenderDrawLine(ren_, center.x - static_cast<int>(radiusPx * 0.9f), legBottomY, center.x, center.y);
-    SDL_RenderDrawLine(ren_, center.x + static_cast<int>(radiusPx * 0.9f), legBottomY, center.x, center.y);
-    SDL_RenderDrawLine(ren_, center.x, legBottomY + 10, center.x, center.y);
+    SDL_SetRenderDrawColor(ren_, COLOR_BORDER.r, COLOR_BORDER.g, COLOR_BORDER.b, 255);
+    for (int t = -1; t <= 1; ++t) {
+        SDL_RenderDrawLine(ren_, center.x - static_cast<int>(radiusPx * 0.9f) + t, legBottomY, center.x + t, center.y);
+        SDL_RenderDrawLine(ren_, center.x + static_cast<int>(radiusPx * 0.9f) + t, legBottomY, center.x + t, center.y);
+        SDL_RenderDrawLine(ren_, center.x + t, legBottomY + 10, center.x + t, center.y);
+    }
 
     // 2. Soporte redondo de paja detrás de la diana
-    drawCircleFilled(center.x, center.y, radiusPx + 6, {170, 140, 90, 255});
-    drawCircleOutline(center.x, center.y, radiusPx + 6, {95, 75, 45, 255});
+    drawCircleFilled(center.x, center.y, radiusPx + 8, {180, 150, 95, 255});
+    drawCircleOutline(center.x, center.y, radiusPx + 8, COLOR_BORDER);
+    drawCircleOutline(center.x, center.y, radiusPx + 7, COLOR_BORDER);
 
-    // 3. Anillos concéntricos oficiales de la diana (FITA)
+    // 3. Anillos oficiales FITA con delineados negros precisos
     // Blanco (1-2)
     drawCircleFilled(center.x, center.y, radiusPx, {245, 245, 250, 255});
+    drawCircleOutline(center.x, center.y, radiusPx, COLOR_BORDER);
     drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.9f), {180, 180, 190, 255});
 
     // Negro (3-4)
     drawCircleFilled(center.x, center.y, static_cast<int>(radiusPx * 0.8f), {35, 35, 40, 255});
-    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.7f), {80, 80, 90, 255});
+    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.8f), COLOR_BORDER);
+    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.7f), {90, 90, 100, 255});
 
     // Azul (5-6)
     drawCircleFilled(center.x, center.y, static_cast<int>(radiusPx * 0.6f), {30, 145, 235, 255});
-    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.5f), {70, 180, 255, 255});
+    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.6f), COLOR_BORDER);
+    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.5f), {80, 185, 255, 255});
 
     // Rojo (7-8)
     drawCircleFilled(center.x, center.y, static_cast<int>(radiusPx * 0.4f), {230, 45, 50, 255});
-    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.3f), {255, 90, 95, 255});
+    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.4f), COLOR_BORDER);
+    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.3f), {255, 95, 100, 255});
 
     // Oro (9-10)
-    drawCircleFilled(center.x, center.y, static_cast<int>(radiusPx * 0.2f), {255, 210, 30, 255});
+    drawCircleFilled(center.x, center.y, static_cast<int>(radiusPx * 0.2f), COLOR_ACCENT_GOLD);
+    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.2f), COLOR_BORDER);
     // Centro X
     drawCircleFilled(center.x, center.y, static_cast<int>(radiusPx * 0.1f), {255, 235, 100, 255});
-    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.1f), {200, 150, 10, 255});
+    drawCircleOutline(center.x, center.y, static_cast<int>(radiusPx * 0.1f), {180, 140, 20, 255});
 
     // 4. Flechas clavadas en la diana
     for (const auto& sa : stuckArrows_) {
         int arrowX = center.x + static_cast<int>((sa.localX / targetDistance_) * fov);
         int arrowY = center.y - static_cast<int>((sa.localY / targetDistance_) * fov);
 
-        // Varilla de la flecha clavada proyectada hacia la cámara
         int shaftLen = std::max(12, static_cast<int>(radiusPx * 0.45f));
         int tailX = arrowX + static_cast<int>(std::sin(sa.angle) * shaftLen);
         int tailY = arrowY + static_cast<int>(std::cos(sa.angle) * shaftLen);
 
-        SDL_SetRenderDrawColor(ren_, 190, 170, 130, 255);
+        SDL_SetRenderDrawColor(ren_, COLOR_BORDER.r, COLOR_BORDER.g, COLOR_BORDER.b, 255);
         SDL_RenderDrawLine(ren_, arrowX, arrowY, tailX, tailY);
+        SDL_SetRenderDrawColor(ren_, COLOR_ARROW_SHAFT.r, COLOR_ARROW_SHAFT.g, COLOR_ARROW_SHAFT.b, 255);
+        SDL_RenderDrawLine(ren_, arrowX + 1, arrowY, tailX + 1, tailY);
 
-        // Plumas fletching rojas / blancas
-        SDL_SetRenderDrawColor(ren_, 235, 50, 50, 255);
+        // Plumas rojas
+        SDL_SetRenderDrawColor(ren_, COLOR_ARROW_FLETCH.r, COLOR_ARROW_FLETCH.g, COLOR_ARROW_FLETCH.b, 255);
         SDL_RenderDrawLine(ren_, tailX - 3, tailY - 3, tailX + 3, tailY + 3);
         drawCircleFilled(tailX, tailY, 3, {255, 255, 255, 255});
     }
@@ -585,300 +683,449 @@ void ArcheryGame::renderFlyingArrow() {
         for (size_t i = 0; i < activeArrow_.trail.size() - 1; ++i) {
             float alpha = static_cast<float>(i) / activeArrow_.trail.size();
             Uint8 a = static_cast<Uint8>(alpha * 180.0f);
-            SDL_SetRenderDrawColor(ren_, 255, 255, 255, a);
+            SDL_SetRenderDrawColor(ren_, 15, 15, 15, a);
             SDL_RenderDrawLine(ren_, static_cast<int>(activeArrow_.trail[i].x), static_cast<int>(activeArrow_.trail[i].y),
                                      static_cast<int>(activeArrow_.trail[i+1].x), static_cast<int>(activeArrow_.trail[i+1].y));
         }
     }
 
-    // Punta y cuerpo de la flecha
     SDL_Point tip = project3D(activeArrow_.x, activeArrow_.y, activeArrow_.z);
     SDL_Point nock = project3D(activeArrow_.x - activeArrow_.vx * 0.015f,
                                activeArrow_.y - activeArrow_.vy * 0.015f,
                                activeArrow_.z - activeArrow_.vz * 0.015f);
 
-    SDL_SetRenderDrawColor(ren_, 210, 190, 140, 255);
+    SDL_SetRenderDrawColor(ren_, COLOR_BORDER.r, COLOR_BORDER.g, COLOR_BORDER.b, 255);
     SDL_RenderDrawLine(ren_, tip.x, tip.y, nock.x, nock.y);
-    drawCircleFilled(tip.x, tip.y, 3, {220, 220, 230, 255});
+    SDL_RenderDrawLine(ren_, tip.x + 1, tip.y, nock.x + 1, nock.y);
+    drawCircleFilled(tip.x, tip.y, 3, COLOR_ARROW_TIP);
 }
 
+// =========================================================================
+// PASO 4: ARCO EN PRIMERA PERSONA (ABAJO AL CENTRO)
+// Brazo de madera, cuerda y flecha reactivos a la tensión de R2
+// =========================================================================
 void ArcheryGame::renderFirstPersonBow() {
     const AimState& aim = input_.getState();
+    float tension = std::clamp(aim.tension, 0.0f, 1.0f);
 
-    // 1. Retícula de apuntado físico (Sigue la orientación del DualShock)
+    // 1. Retícula de apuntado físico (sigue la orientación del DualShock)
     int crossX = 960 + static_cast<int>(aim.x * 750.0f);
-    int crossY = 540 + static_cast<int>(aim.y * 450.0f);
+    int crossY = HORIZON_Y + static_cast<int>(aim.y * 450.0f);
 
-    int ringRadius = 24 - static_cast<int>(aim.tension * 8.0f); // Se cierra al tensar
-    SDL_Color reticleColor = aim.isDrawing ? SDL_Color{255, 180, 40, 240} : SDL_Color{220, 240, 255, 200};
+    int ringRadius = 24 - static_cast<int>(tension * 8.0f); // Se contrae al tensar
+    SDL_Color reticleColor = aim.isDrawing ? COLOR_ACCENT_RED : COLOR_BORDER;
 
+    // Retícula brutalista de alto contraste
     drawCircleOutline(crossX, crossY, ringRadius, reticleColor);
-    drawCircleOutline(crossX, crossY, 3, reticleColor);
-    // Marcas de elevación y viento
-    SDL_SetRenderDrawColor(ren_, reticleColor.r, reticleColor.g, reticleColor.b, 180);
-    SDL_RenderDrawLine(ren_, crossX - ringRadius - 6, crossY, crossX - ringRadius + 2, crossY);
-    SDL_RenderDrawLine(ren_, crossX + ringRadius - 2, crossY, crossX + ringRadius + 6, crossY);
-    SDL_RenderDrawLine(ren_, crossX, crossY - ringRadius - 6, crossX, crossY - ringRadius + 2);
+    drawCircleOutline(crossX, crossY, ringRadius - 1, reticleColor);
+    drawCircleFilled(crossX, crossY, 3, reticleColor);
+
+    // Marcas de cruz
+    SDL_SetRenderDrawColor(ren_, reticleColor.r, reticleColor.g, reticleColor.b, 255);
+    SDL_RenderDrawLine(ren_, crossX - ringRadius - 8, crossY, crossX - ringRadius + 2, crossY);
+    SDL_RenderDrawLine(ren_, crossX + ringRadius - 2, crossY, crossX + ringRadius + 8, crossY);
+    SDL_RenderDrawLine(ren_, crossX, crossY - ringRadius - 8, crossX, crossY - ringRadius + 2);
     SDL_RenderDrawLine(ren_, crossX, crossY + ringRadius - 2, crossX, crossY + ringRadius + 14);
 
-    // 2. Arco en primera persona (Pala superior, pala inferior, cuerda y flecha en reposo/tensado)
-    // El arco se inclina ligeramente con el movimiento
-    int bowBaseX = 1450 + static_cast<int>(aim.x * 80.0f);
-    int bowBaseY = 820 + static_cast<int>(aim.y * 60.0f);
+    // =========================================================================
+    // 2. ARCO EN PRIMERA PERSONA VISTO DESDE EL ARQUERO (GRANDE, VERTICAL Y REALISTA)
+    // Sostenido con la mano izquierda al frente, apuntando a la diana
+    // =========================================================================
+    float bowX = 920.0f + aim.x * 80.0f;
+    float bowY = 720.0f + aim.y * 55.0f;
 
-    // Tensión retrae el nock hacia el ojo del jugador
-    float drawBack = aim.tension * 280.0f;
-    int nockX = bowBaseX - 160 - static_cast<int>(drawBack);
-    int nockY = bowBaseY - static_cast<int>(stringVibration_ * 15.0f);
+    // Flexión dinámica de las palas con la tensión de R2
+    float flexInward = tension * 42.0f; // Se doblan hacia adentro bajo la carga
+    float flexFlatten = tension * 32.0f; // Se aplanan los extremos
 
-    // Puntas de las palas del arco
-    int topTipX = bowBaseX - 40 - static_cast<int>(aim.tension * 40.0f);
-    int topTipY = bowBaseY - 380;
-    int botTipX = bowBaseX - 40 - static_cast<int>(aim.tension * 40.0f);
-    int botTipY = bowBaseY + 280;
+    // Extremos de las palas del arco (Siyahs)
+    float topTipX = bowX + 25.0f - flexInward;
+    float topTipY = bowY - 360.0f + flexFlatten;
 
-    // Cuerpo del arco (Riser y palas de madera/carbono)
-    SDL_SetRenderDrawColor(ren_, 135, 75, 40, 255); // Madera noble
-    for (int t = -4; t <= 4; ++t) {
-        SDL_RenderDrawLine(ren_, bowBaseX + t, bowBaseY - 140, topTipX + t, topTipY);
-        SDL_RenderDrawLine(ren_, bowBaseX + t, bowBaseY + 120, botTipX + t, botTipY);
+    float botTipX = bowX + 25.0f - flexInward;
+    float botTipY = bowY + 360.0f - flexFlatten;
+
+    // Codos intermedios para la curvatura recurva
+    float midTopX = bowX - 45.0f - flexInward * 0.3f;
+    float midTopY = bowY - 175.0f;
+
+    float midBotX = bowX - 45.0f - flexInward * 0.3f;
+    float midBotY = bowY + 175.0f;
+
+    // Nock de la cuerda (punto de apoyo de la flecha)
+    // En reposo está cerca de la empuñadura; al tensar R2 se jala hacia atrás hacia el arquero
+    float pullBack = tension * 280.0f;
+    float nockX = bowX - 55.0f - pullBack;
+    float nockY = bowY + tension * 38.0f + stringVibration_ * 15.0f;
+
+    // --- Sombra del arco en primera persona ---
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(ren_, 10, 10, 10, 40);
+    for (int t = 0; t < 8; ++t) {
+        SDL_RenderDrawLine(ren_, static_cast<int>(topTipX + 14), static_cast<int>(topTipY + 14 + t),
+                                 static_cast<int>(nockX + 14), static_cast<int>(nockY + 14 + t));
+        SDL_RenderDrawLine(ren_, static_cast<int>(botTipX + 14), static_cast<int>(botTipY + 14 + t),
+                                 static_cast<int>(nockX + 14), static_cast<int>(nockY + 14 + t));
     }
-    // Empuñadura central
-    drawCircleFilled(bowBaseX, bowBaseY, 20, {45, 45, 50, 255});
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
 
-    // Cuerda del arco (Top -> Nock -> Bottom)
-    SDL_SetRenderDrawColor(ren_, 245, 245, 255, 230);
-    SDL_RenderDrawLine(ren_, topTipX, topTipY, nockX, nockY);
-    SDL_RenderDrawLine(ren_, botTipX, botTipY, nockX, nockY);
+    // --- CUERDA DEL ARCO (TopTip -> Nock -> BotTip) ---
+    // Sombra sutil de la cuerda
+    SDL_SetRenderDrawColor(ren_, 15, 15, 15, 140);
+    SDL_RenderDrawLine(ren_, static_cast<int>(topTipX + 2), static_cast<int>(topTipY + 2),
+                             static_cast<int>(nockX + 2), static_cast<int>(nockY + 2));
+    SDL_RenderDrawLine(ren_, static_cast<int>(botTipX + 2), static_cast<int>(botTipY + 2),
+                             static_cast<int>(nockX + 2), static_cast<int>(nockY + 2));
 
-    // Flecha apoyada en la cuerda (si quedan flechas y no está en vuelo)
+    // Cuerda blanca nítida reforzada
+    SDL_SetRenderDrawColor(ren_, COLOR_STRING.r, COLOR_STRING.g, COLOR_STRING.b, 255);
+    for (int w = -1; w <= 1; ++w) {
+        SDL_RenderDrawLine(ren_, static_cast<int>(topTipX + w), static_cast<int>(topTipY),
+                                 static_cast<int>(nockX + w), static_cast<int>(nockY));
+        SDL_RenderDrawLine(ren_, static_cast<int>(botTipX + w), static_cast<int>(botTipY),
+                                 static_cast<int>(nockX + w), static_cast<int>(nockY));
+    }
+
+    // --- FLECHA EN EL ARCO (cuando quedan flechas y no está en vuelo) ---
     if (arrowsRemaining_ > 0 && !activeArrow_.active) {
-        int arrowTipX = bowBaseX + 220;
-        int arrowTipY = bowBaseY - 4;
+        float arrowLen = 540.0f;
+        float arrowTipX = nockX + arrowLen;
+        float arrowTipY = bowY - 6.0f;
 
-        // Vástago de la flecha
-        SDL_SetRenderDrawColor(ren_, 215, 185, 130, 255);
-        SDL_RenderDrawLine(ren_, nockX, nockY, arrowTipX, arrowTipY);
-        SDL_RenderDrawLine(ren_, nockX, nockY + 1, arrowTipX, arrowTipY + 1);
+        // Vástago de la flecha con contorno negro
+        SDL_SetRenderDrawColor(ren_, COLOR_BORDER.r, COLOR_BORDER.g, COLOR_BORDER.b, 255);
+        for (int b = -2; b <= 2; ++b) {
+            SDL_RenderDrawLine(ren_, static_cast<int>(nockX), static_cast<int>(nockY + b),
+                                     static_cast<int>(arrowTipX), static_cast<int>(arrowTipY + b));
+        }
+        // Madera clara de la flecha
+        SDL_SetRenderDrawColor(ren_, COLOR_ARROW_SHAFT.r, COLOR_ARROW_SHAFT.g, COLOR_ARROW_SHAFT.b, 255);
+        for (int b = -1; b <= 1; ++b) {
+            SDL_RenderDrawLine(ren_, static_cast<int>(nockX), static_cast<int>(nockY + b),
+                                     static_cast<int>(arrowTipX - 12), static_cast<int>(arrowTipY + b));
+        }
 
-        // Punta de acero
-        drawCircleFilled(arrowTipX, arrowTipY, 4, {220, 220, 230, 255});
+        // Punta de acero de flecha
+        SDL_SetRenderDrawColor(ren_, COLOR_ARROW_TIP.r, COLOR_ARROW_TIP.g, COLOR_ARROW_TIP.b, 255);
+        for (int p = 0; p < 14; ++p) {
+            int px = static_cast<int>(arrowTipX - 14 + p);
+            int pySpan = (14 - p) / 2;
+            SDL_RenderDrawLine(ren_, px, static_cast<int>(arrowTipY - pySpan),
+                                     px, static_cast<int>(arrowTipY + pySpan));
+        }
+        drawCircleOutline(static_cast<int>(arrowTipX), static_cast<int>(arrowTipY), 5, COLOR_BORDER);
 
-        // Plumas (Fletchings) rojas en el nock
-        SDL_SetRenderDrawColor(ren_, 235, 40, 40, 255);
-        SDL_RenderDrawLine(ren_, nockX + 5, nockY - 8, nockX + 28, nockY - 1);
-        SDL_RenderDrawLine(ren_, nockX + 5, nockY + 8, nockX + 28, nockY + 1);
+        // Plumas fletchings rojas y blancas en el culatín (nock)
+        SDL_SetRenderDrawColor(ren_, COLOR_ARROW_FLETCH.r, COLOR_ARROW_FLETCH.g, COLOR_ARROW_FLETCH.b, 255);
+        for (int p = 0; p < 4; ++p) {
+            SDL_RenderDrawLine(ren_, static_cast<int>(nockX + 8 + p * 8), static_cast<int>(nockY - 14 + p * 2),
+                                     static_cast<int>(nockX + 24 + p * 8), static_cast<int>(nockY - 2));
+            SDL_RenderDrawLine(ren_, static_cast<int>(nockX + 8 + p * 8), static_cast<int>(nockY + 14 - p * 2),
+                                     static_cast<int>(nockX + 24 + p * 8), static_cast<int>(nockY + 2));
+        }
+        // Pluma timonera blanca
+        SDL_SetRenderDrawColor(ren_, 255, 255, 255, 255);
+        SDL_RenderDrawLine(ren_, static_cast<int>(nockX + 12), static_cast<int>(nockY),
+                                 static_cast<int>(nockX + 45), static_cast<int>(nockY));
     }
+
+    // --- BRAZOS DE MADERA DEL ARCO (Pala Superior e Inferior) ---
+    // 1. Contorno negro grueso brutalista (8px)
+    SDL_SetRenderDrawColor(ren_, COLOR_BORDER.r, COLOR_BORDER.g, COLOR_BORDER.b, 255);
+    for (int t = -6; t <= 6; ++t) {
+        // Pala superior
+        SDL_RenderDrawLine(ren_, static_cast<int>(bowX + t), static_cast<int>(bowY - 35),
+                                 static_cast<int>(midTopX + t), static_cast<int>(midTopY));
+        SDL_RenderDrawLine(ren_, static_cast<int>(midTopX + t), static_cast<int>(midTopY),
+                                 static_cast<int>(topTipX + t), static_cast<int>(topTipY));
+        // Pala inferior
+        SDL_RenderDrawLine(ren_, static_cast<int>(bowX + t), static_cast<int>(bowY + 35),
+                                 static_cast<int>(midBotX + t), static_cast<int>(midBotY));
+        SDL_RenderDrawLine(ren_, static_cast<int>(midBotX + t), static_cast<int>(midBotY),
+                                 static_cast<int>(botTipX + t), static_cast<int>(botTipY));
+    }
+
+    // 2. Relleno de madera noble oscura
+    SDL_SetRenderDrawColor(ren_, COLOR_WOOD_DARK.r, COLOR_WOOD_DARK.g, COLOR_WOOD_DARK.b, 255);
+    for (int t = -4; t <= 4; ++t) {
+        SDL_RenderDrawLine(ren_, static_cast<int>(bowX + t), static_cast<int>(bowY - 35),
+                                 static_cast<int>(midTopX + t), static_cast<int>(midTopY));
+        SDL_RenderDrawLine(ren_, static_cast<int>(midTopX + t), static_cast<int>(midTopY),
+                                 static_cast<int>(topTipX + t), static_cast<int>(topTipY));
+
+        SDL_RenderDrawLine(ren_, static_cast<int>(bowX + t), static_cast<int>(bowY + 35),
+                                 static_cast<int>(midBotX + t), static_cast<int>(midBotY));
+        SDL_RenderDrawLine(ren_, static_cast<int>(midBotX + t), static_cast<int>(midBotY),
+                                 static_cast<int>(botTipX + t), static_cast<int>(botTipY));
+    }
+
+    // 3. Veta de madera clara
+    SDL_SetRenderDrawColor(ren_, COLOR_WOOD_LIGHT.r, COLOR_WOOD_LIGHT.g, COLOR_WOOD_LIGHT.b, 255);
+    for (int t = -1; t <= 1; ++t) {
+        SDL_RenderDrawLine(ren_, static_cast<int>(bowX + t), static_cast<int>(bowY - 35),
+                                 static_cast<int>(midTopX + t), static_cast<int>(midTopY));
+        SDL_RenderDrawLine(ren_, static_cast<int>(midTopX + t), static_cast<int>(midTopY),
+                                 static_cast<int>(topTipX + t), static_cast<int>(topTipY));
+
+        SDL_RenderDrawLine(ren_, static_cast<int>(bowX + t), static_cast<int>(bowY + 35),
+                                 static_cast<int>(midBotX + t), static_cast<int>(midBotY));
+        SDL_RenderDrawLine(ren_, static_cast<int>(midBotX + t), static_cast<int>(midBotY),
+                                 static_cast<int>(botTipX + t), static_cast<int>(botTipY));
+    }
+
+    // 4. Extremos curvos reforzados (Siyahs de madera dura)
+    drawCircleFilled(static_cast<int>(topTipX), static_cast<int>(topTipY), 8, COLOR_BORDER);
+    drawCircleFilled(static_cast<int>(topTipX), static_cast<int>(topTipY), 5, COLOR_ACCENT_GOLD);
+    drawCircleFilled(static_cast<int>(botTipX), static_cast<int>(botTipY), 8, COLOR_BORDER);
+    drawCircleFilled(static_cast<int>(botTipX), static_cast<int>(botTipY), 5, COLOR_ACCENT_GOLD);
+
+    // 5. Empuñadura central acolchada (Riser con cuero negro y ribetes dorados)
+    drawBrutalistBox(ren_, static_cast<int>(bowX - 22), static_cast<int>(bowY - 42), 44, 84, false, COLOR_BOW_GRIP, COLOR_ACCENT_GOLD, 6);
+
+    // Cintas doradas de la empuñadura
+    SDL_SetRenderDrawColor(ren_, COLOR_ACCENT_GOLD.r, COLOR_ACCENT_GOLD.g, COLOR_ACCENT_GOLD.b, 255);
+    SDL_Rect band1 = { static_cast<int>(bowX - 18), static_cast<int>(bowY - 24), 36, 4 };
+    SDL_Rect band2 = { static_cast<int>(bowX - 18), static_cast<int>(bowY + 20), 36, 4 };
+    SDL_RenderFillRect(ren_, &band1);
+    SDL_RenderFillRect(ren_, &band2);
 }
 
+// =========================================================================
+// PASO 2: HUD NEO-BRUTALISTA COMPLETO
+// (RONDA, PUNTOS, RÉCORD, DISTANCIA, FLECHAS, TENSIÓN R2)
+// =========================================================================
 void ArcheryGame::renderHUD() {
-    // 1. Barra superior de información
-    SDL_Rect topBar = {0, 0, 1920, 85};
-    SDL_SetRenderDrawColor(ren_, 15, 25, 35, 210);
-    SDL_RenderFillRect(ren_, &topBar);
-    SDL_SetRenderDrawColor(ren_, 45, 80, 110, 180);
-    SDL_RenderDrawLine(ren_, 0, 85, 1920, 85);
-
-    // Ronda actual
+    // 1. Tarjeta Superior Izquierda: RONDA
+    drawBrutalistBox(ren_, 40, 24, 260, 68, false, COLOR_CARD_BG, COLOR_ACCENT_BLUE);
     std::string roundStr = "RONDA " + std::to_string(currentRound_) + " / " + std::to_string(kTotalRounds);
-    drawText(fontMed_, roundStr, 60, 24, {240, 245, 250, 255});
+    drawText(fontMed_, roundStr, 170, 58, COLOR_TEXT_MAIN, true);
 
-    // Distancia del objetivo
+    // 2. Tarjeta Superior Central: DISTANCIA Y VIENTO
+    drawBrutalistBox(ren_, 740, 24, 440, 68, false, COLOR_CARD_BG, COLOR_ACCENT_GOLD);
     std::string distStr = "DISTANCIA: " + std::to_string(static_cast<int>(targetDistance_)) + " METROS";
-    drawText(fontMed_, distStr, 960, 24, {255, 215, 60, 255}, true);
+    drawText(fontMed_, distStr, 960, 58, COLOR_TEXT_MAIN, true);
 
-    // Puntos acumulados
-    std::string scoreStr = "PUNTOS: " + std::to_string(totalScore_);
-    drawText(fontLarge_, scoreStr, 1600, 16, {255, 255, 255, 255});
-
-    // 2. Carcaj de flechas restantes (Abajo a la izquierda)
-    int quiverX = 60;
-    int quiverY = 1000;
-    drawText(fontSmall_, "FLECHAS RESTANTES:", quiverX, quiverY - 32, {200, 215, 230, 220});
-    for (int i = 0; i < kArrowsPerRound; ++i) {
-        SDL_Color arrowColor = (i < arrowsRemaining_) ? SDL_Color{80, 220, 120, 255} : SDL_Color{70, 80, 90, 160};
-        drawCircleFilled(quiverX + i * 36, quiverY, 10, arrowColor);
-        drawCircleOutline(quiverX + i * 36, quiverY, 10, {255, 255, 255, 180});
+    // Indicador de Viento debajo de la distancia (Extra 5)
+    if (EXTRA_ENABLE_WIND) {
+        drawBrutalistBox(ren_, 830, 98, 260, 36, false, COLOR_CARD_MUTED, {0,0,0,0}, 4);
+        std::string wStr = "VIENTO: " + windLabel_;
+        drawText(fontSmall_, wStr, 960, 116, (windSpeed_ > 2.0f) ? COLOR_ACCENT_RED : COLOR_TEXT_MAIN, true);
     }
 
-    // Indicador de calibración rápida
-    drawText(fontSmall_, "[△ / C] Centrar mira", quiverX, quiverY + 28, {160, 185, 205, 180});
+    // 3. Tarjeta Superior Derecha: PUNTOS Y RÉCORD
+    drawBrutalistBox(ren_, 1440, 24, 440, 68, false, COLOR_CARD_BG, COLOR_ACCENT_GREEN);
+    std::string scoreStr = "PUNTOS: " + std::to_string(totalScore_);
+    drawText(fontMed_, scoreStr, 1550, 58, COLOR_TEXT_MAIN, true);
 
-    // 3. Barra de Tensión del Arco (Abajo a la derecha)
+    // Badge de récord
+    std::string recordStr = "RÉCORD: " + std::to_string(config_.highRecord);
+    drawText(fontSmall_, recordStr, 1770, 58, COLOR_ACCENT_RED, true);
+
+    // 4. Tarjeta Inferior Izquierda: FLECHAS RESTANTES
+    drawBrutalistBox(ren_, 40, 940, 380, 100, false, COLOR_CARD_BG, COLOR_ACCENT_GOLD);
+    drawText(fontSmall_, "FLECHAS RESTANTES:", 230, 962, COLOR_TEXT_MAIN, true);
+
+    int quiverStartX = 110;
+    for (int i = 0; i < kArrowsPerRound; ++i) {
+        int ax = quiverStartX + i * 44;
+        int ay = 998;
+        if (i < arrowsRemaining_) {
+            drawCircleFilled(ax, ay, 12, COLOR_ACCENT_GREEN);
+            drawCircleOutline(ax, ay, 12, COLOR_BORDER);
+            drawCircleOutline(ax, ay, 11, COLOR_BORDER);
+            // Punta interior
+            drawCircleFilled(ax, ay, 4, {255, 255, 255, 255});
+        } else {
+            drawCircleFilled(ax, ay, 12, {200, 200, 205, 255});
+            drawCircleOutline(ax, ay, 12, COLOR_BORDER);
+        }
+    }
+    drawText(fontSmall_, "[START/ESC] AJUSTES  •  [△/C] CENTRAR", 230, 1025, COLOR_TEXT_MUTED, true);
+
+    // 5. Tarjeta Inferior Derecha: TENSIÓN R2
     const AimState& aim = input_.getState();
-    int barW = 380;
-    int barH = 28;
-    int barX = 1480;
-    int barY = 1010;
+    drawBrutalistBox(ren_, 1500, 940, 380, 100, false, COLOR_CARD_BG, COLOR_ACCENT_RED);
 
-    drawText(fontSmall_, "TENSIÓN DEL ARCO (MANTENER R2):", barX, barY - 30, {220, 230, 245, 230});
+    int pct = static_cast<int>(aim.tension * 100.0f);
+    std::string tensStr = "TENSIÓN R2: " + std::to_string(pct) + "%";
+    drawText(fontSmall_, tensStr, 1690, 962, COLOR_TEXT_MAIN, true);
 
-    // Marco exterior
-    SDL_Rect barBg = {barX, barY, barW, barH};
-    SDL_SetRenderDrawColor(ren_, 25, 35, 45, 220);
+    // Barra de progreso brutalista
+    int barW = 320;
+    int barH = 24;
+    int barX = 1530;
+    int barY = 986;
+
+    // Fondo gris claro de la barra con borde negro
+    SDL_SetRenderDrawColor(ren_, COLOR_CARD_MUTED.r, COLOR_CARD_MUTED.g, COLOR_CARD_MUTED.b, 255);
+    SDL_Rect barBg = { barX, barY, barW, barH };
     SDL_RenderFillRect(ren_, &barBg);
 
     // Relleno progresivo
     int fillW = static_cast<int>(aim.tension * barW);
     if (fillW > 0) {
-        SDL_Rect fillRect = {barX, barY, fillW, barH};
-        Uint8 r = static_cast<Uint8>(std::min(255.0f, 50.0f + aim.tension * 205.0f));
-        Uint8 g = static_cast<Uint8>(std::max(40.0f, 220.0f - aim.tension * 160.0f));
-        SDL_SetRenderDrawColor(ren_, r, g, 30, 255);
-        SDL_RenderFillRect(ren_, &fillRect);
+        SDL_Rect barFill = { barX, barY, fillW, barH };
+        SDL_Color fillCol;
+        if (aim.tension < 0.5f) {
+            fillCol = COLOR_ACCENT_GREEN;
+        } else if (aim.tension < 0.85f) {
+            fillCol = COLOR_ACCENT_GOLD;
+        } else {
+            fillCol = COLOR_ACCENT_RED;
+        }
+        SDL_SetRenderDrawColor(ren_, fillCol.r, fillCol.g, fillCol.b, 255);
+        SDL_RenderFillRect(ren_, &barFill);
     }
-    SDL_SetRenderDrawColor(ren_, 160, 180, 200, 255);
-    SDL_RenderDrawRect(ren_, &barBg);
 
-    // Porcentaje
-    std::string pctStr = std::to_string(static_cast<int>(aim.tension * 100.0f)) + "%";
-    drawText(fontSmall_, pctStr, barX + barW + 15, barY + 4, {255, 255, 255, 255});
+    // Borde negro de la barra
+    SDL_SetRenderDrawColor(ren_, COLOR_BORDER.r, COLOR_BORDER.g, COLOR_BORDER.b, 255);
+    for (int b = 0; b < 2; ++b) {
+        SDL_Rect bor = { barX + b, barY + b, barW - b * 2, barH - b * 2 };
+        SDL_RenderDrawRect(ren_, &bor);
+    }
+}
+
+// =========================================================================
+// PASO 3: MENÚ DE AJUSTES (START/ESC)
+// Opciones: Continuar, Calibrar centro, Volver al menú, Salir
+// =========================================================================
+void ArcheryGame::renderPauseMenu() {
+    // Oscurecimiento de fondo
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(ren_, 15, 15, 18, 180);
+    SDL_Rect fullScreen = { 0, 0, 1920, 1080 };
+    SDL_RenderFillRect(ren_, &fullScreen);
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
+
+    int cardW = 740;
+    int cardH = 460;
+    int cardX = 960 - cardW / 2;
+    int cardY = 540 - cardH / 2;
+
+    drawBrutalistBox(ren_, cardX, cardY, cardW, cardH, false, COLOR_CARD_BG, COLOR_ACCENT_GOLD, 16);
+
+    drawText(fontLarge_, "MENÚ DE AJUSTES", 960, cardY + 55, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, "USA [ARRIBA / ABAJO] Y [X / ENTER]", 960, cardY + 105, COLOR_TEXT_MUTED, true);
+
+    std::vector<std::string> options = {
+        "CONTINUAR",
+        "CALIBRAR CENTRO",
+        "VOLVER AL MENÚ",
+        "SALIR"
+    };
+
+    int startY = cardY + 165;
+    for (size_t i = 0; i < options.size(); ++i) {
+        bool selected = (static_cast<int>(i) == pauseMenuIndex_);
+        int optY = startY + static_cast<int>(i * 60);
+
+        if (selected) {
+            // Tarjeta seleccionada con borde grueso y acento dorado
+            int tagW = 460;
+            int tagH = 48;
+            int tagX = 960 - tagW / 2;
+            drawBrutalistBox(ren_, tagX, optY - tagH / 2, tagW, tagH, false, COLOR_CARD_MUTED, COLOR_ACCENT_GOLD, 6);
+            std::string selText = "►  " + options[i] + "  ◄";
+            drawText(fontMed_, selText, 960, optY, COLOR_TEXT_MAIN, true);
+        } else {
+            drawText(fontMed_, options[i], 960, optY, COLOR_TEXT_MUTED, true);
+        }
+    }
+
+    drawText(fontSmall_, "[O / ESC] Volver al juego", 960, cardY + cardH - 35, COLOR_TEXT_MUTED, true);
 }
 
 void ArcheryGame::renderCalibrationScreen() {
-    SDL_Rect modal = {320, 180, 1280, 720};
-    SDL_SetRenderDrawColor(ren_, 12, 18, 25, 245);
-    SDL_RenderFillRect(ren_, &modal);
-    SDL_SetRenderDrawColor(ren_, 60, 120, 180, 255);
-    SDL_RenderDrawRect(ren_, &modal);
+    int cardW = 1000;
+    int cardH = 580;
+    int cardX = 960 - cardW / 2;
+    int cardY = 540 - cardH / 2;
 
-    drawText(fontLarge_, "CALIBRACIÓN DE APUNTADO FÍSICO", 960, 215, {255, 215, 60, 255}, true);
+    drawBrutalistBox(ren_, cardX, cardY, cardW, cardH, false, COLOR_CARD_BG, COLOR_ACCENT_GOLD, 16);
 
-    // Estado del mando
-    if (input_.hasController() && input_.hasGyro()) {
-        drawText(fontSmall_, "✓ DualShock 4 conectado con Giroscopio y Acelerómetro activos", 960, 275, {80, 230, 140, 255}, true);
-    } else {
-        drawText(fontSmall_, "⚠ Conecta tu DualShock para apuntado por movimiento (o usa ratón/sticks)", 960, 275, {255, 190, 60, 255}, true);
-    }
+    drawText(fontLarge_, "CALIBRACIÓN DE APUNTADO", 960, cardY + 60, COLOR_TEXT_MAIN, true);
 
-    // Telemetría en vivo de los sensores
-    char sensorBuf[128];
-    std::snprintf(sensorBuf, sizeof(sensorBuf), "Vertical (Pitch): %+.1f°   |   Horizontal (Yaw): %+.1f°   |   Inclinación (Roll): %+.1f°",
-                  input_.getPitchDegrees(), input_.getYawDegrees(), input_.getRollDegrees());
-    drawText(fontSmall_, sensorBuf, 960, 310, {180, 215, 245, 230}, true);
+    drawText(fontMed_, "Sostén el DualShock apuntando hacia el centro de la pantalla.", 960, cardY + 160, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, "La orientación del mando controlará la mira con precisión en tiempo real.", 960, cardY + 210, COLOR_TEXT_MUTED, true);
 
-    // Marco visual interactivo con diana miniatura y punto de mira en vivo
-    int previewBoxX = 760;
-    int previewBoxY = 350;
-    int previewBoxW = 400;
-    int previewBoxH = 220;
-    SDL_Rect pBox = {previewBoxX, previewBoxY, previewBoxW, previewBoxH};
-    SDL_SetRenderDrawColor(ren_, 20, 30, 42, 255);
-    SDL_RenderFillRect(ren_, &pBox);
-    SDL_SetRenderDrawColor(ren_, 50, 90, 130, 255);
-    SDL_RenderDrawRect(ren_, &pBox);
+    // Cuadro de controles
+    int boxW = 820;
+    int boxH = 180;
+    int boxX = 960 - boxW / 2;
+    int boxY = cardY + 260;
+    drawBrutalistBox(ren_, boxX, boxY, boxW, boxH, false, COLOR_CARD_MUTED, {0,0,0,0}, 6);
 
-    // Centro de la caja
-    int pCenterX = previewBoxX + previewBoxW / 2;
-    int pCenterY = previewBoxY + previewBoxH / 2;
-    drawCircleFilled(pCenterX, pCenterY, 8, {255, 215, 40, 200});
-    drawCircleOutline(pCenterX, pCenterY, 25, {220, 60, 60, 160});
-    drawCircleOutline(pCenterX, pCenterY, 50, {40, 140, 220, 140});
+    drawText(fontSmall_, "• Orientación DualShock: Mover el arco y apuntar a la diana", 960, boxY + 35, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, "• Mantener R2: Tensar la cuerda del arco progresivamente", 960, boxY + 75, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, "• Soltar R2: Disparar la flecha", 960, boxY + 115, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, "• Triángulo [△] o tecla [C]: Recentrar mira en cualquier momento", 960, boxY + 150, COLOR_ACCENT_RED, true);
 
-    // Punto de mira en tiempo real
-    const AimState& aim = input_.getState();
-    int liveX = pCenterX + static_cast<int>(aim.x * (previewBoxW / 2 - 15));
-    int liveY = pCenterY + static_cast<int>(aim.y * (previewBoxH / 2 - 15));
-    liveX = std::clamp(liveX, previewBoxX + 10, previewBoxX + previewBoxW - 10);
-    liveY = std::clamp(liveY, previewBoxY + 10, previewBoxY + previewBoxH - 10);
-
-    drawCircleFilled(liveX, liveY, 6, {80, 240, 140, 255});
-    drawCircleOutline(liveX, liveY, 14, {80, 240, 140, 255});
-    SDL_SetRenderDrawColor(ren_, 80, 240, 140, 200);
-    SDL_RenderDrawLine(ren_, liveX - 18, liveY, liveX + 18, liveY);
-    SDL_RenderDrawLine(ren_, liveX, liveY - 18, liveX, liveY + 18);
-
-    drawText(fontSmall_, "Mueve e inclina el mando para probar la mira en tiempo real", 960, 585, {200, 220, 240, 220}, true);
-
-    drawText(fontSmall_, "• Mantener R2: Tensar arco   • Soltar R2: Disparar flecha   • [△] o [C]: Centrar mira", 960, 640, {255, 215, 80, 255}, true);
-
-    drawText(fontLarge_, "Presiona [X] o [ENTER] para Fijar el Centro y Jugar", 960, 720, {80, 245, 140, 255}, true);
+    drawText(fontLarge_, "PRESIONA [X] O [ENTER] PARA COMENZAR", 960, cardY + cardH - 50, COLOR_ACCENT_GREEN, true);
 }
 
 void ArcheryGame::renderRoundSummary() {
-    SDL_Rect modal = {460, 260, 1000, 540};
-    SDL_SetRenderDrawColor(ren_, 15, 22, 30, 245);
-    SDL_RenderFillRect(ren_, &modal);
-    SDL_SetRenderDrawColor(ren_, 70, 140, 200, 255);
-    SDL_RenderDrawRect(ren_, &modal);
+    int cardW = 900;
+    int cardH = 500;
+    int cardX = 960 - cardW / 2;
+    int cardY = 540 - cardH / 2;
+
+    drawBrutalistBox(ren_, cardX, cardY, cardW, cardH, false, COLOR_CARD_BG, COLOR_ACCENT_GOLD, 16);
 
     std::string title = "¡RONDA " + std::to_string(currentRound_) + " COMPLETADA!";
-    drawText(fontLarge_, title, 960, 310, {255, 215, 60, 255}, true);
+    drawText(fontLarge_, title, 960, cardY + 65, COLOR_TEXT_MAIN, true);
 
     std::string rPts = "Puntos en esta ronda: +" + std::to_string(roundScore_);
-    drawText(fontMed_, rPts, 960, 420, {100, 240, 150, 255}, true);
+    drawText(fontMed_, rPts, 960, cardY + 160, COLOR_ACCENT_GREEN, true);
 
-    std::string totalPts = "Puntuación total acumulada: " + std::to_string(totalScore_);
-    drawText(fontMed_, totalPts, 960, 480, {240, 245, 255, 255}, true);
+    std::string totalPts = "Puntuación acumulada: " + std::to_string(totalScore_) + " PUNTOS";
+    drawText(fontMed_, totalPts, 960, cardY + 225, COLOR_TEXT_MAIN, true);
 
-    std::string nextDist = "Siguiente distancia: " + std::to_string(static_cast<int>(targetDistance_ + 5.0f)) + " metros";
-    drawText(fontSmall_, nextDist, 960, 550, {255, 190, 40, 255}, true);
+    std::string nextDist = "Siguiente distancia: " + std::to_string(static_cast<int>(targetDistance_ + 5.0f)) + " METROS";
+    drawText(fontSmall_, nextDist, 960, cardY + 290, COLOR_ACCENT_GOLD, true);
 
-    drawText(fontMed_, "Presiona [X] para la siguiente ronda", 960, 680, {80, 240, 140, 255}, true);
-    drawText(fontSmall_, "Presiona [O] o [ESC] para salir al menú", 960, 730, {180, 190, 200, 200}, true);
+    drawText(fontMed_, "Presiona [X / ENTER] para Siguiente Ronda", 960, cardY + 390, COLOR_ACCENT_GREEN, true);
+    drawText(fontSmall_, "[O / ESC] Volver al Menú Principal", 960, cardY + 445, COLOR_TEXT_MUTED, true);
 }
 
+// =========================================================================
+// PASO 5: PANTALLA DE RESUMEN TRAS LAS 10 RONDAS
+// =========================================================================
 void ArcheryGame::renderMatchOver() {
-    SDL_Rect modal = {420, 180, 1080, 720};
-    SDL_SetRenderDrawColor(ren_, 12, 18, 26, 250);
-    SDL_RenderFillRect(ren_, &modal);
-    SDL_SetRenderDrawColor(ren_, 255, 215, 60, 255);
-    SDL_RenderDrawRect(ren_, &modal);
+    int cardW = 980;
+    int cardH = 640;
+    int cardX = 960 - cardW / 2;
+    int cardY = 540 - cardH / 2;
 
-    drawText(fontLarge_, "¡PARTIDA COMPLETADA!", 960, 230, {255, 220, 50, 255}, true);
+    drawBrutalistBox(ren_, cardX, cardY, cardW, cardH, false, COLOR_CARD_BG, isNewRecord_ ? COLOR_ACCENT_RED : COLOR_ACCENT_GOLD, 16);
+
+    drawText(fontLarge_, "¡PARTIDA COMPLETADA!", 960, cardY + 55, COLOR_TEXT_MAIN, true);
 
     if (isNewRecord_) {
-        drawText(fontLarge_, "★ ¡NUEVO RÉCORD HISTÓRICO! ★", 960, 310, {255, 70, 70, 255}, true);
+        drawText(fontLarge_, "★ ¡NUEVO RÉCORD HISTÓRICO! ★", 960, cardY + 120, COLOR_ACCENT_RED, true);
     } else {
-        std::string recTxt = "Récord actual: " + std::to_string(config_.highRecord) + " puntos";
-        drawText(fontSmall_, recTxt, 960, 320, {200, 220, 240, 220}, true);
+        std::string recTxt = "RÉCORD HISTÓRICO: " + std::to_string(config_.highRecord) + " PUNTOS";
+        drawText(fontSmall_, recTxt, 960, cardY + 120, COLOR_TEXT_MUTED, true);
     }
 
+    // Puntuación Final Destacada
+    int scoreTagW = 600;
+    int scoreTagH = 70;
+    drawBrutalistBox(ren_, 960 - scoreTagW / 2, cardY + 165, scoreTagW, scoreTagH, false, COLOR_CARD_MUTED, COLOR_ACCENT_GREEN, 6);
     std::string finalPts = "PUNTUACIÓN FINAL: " + std::to_string(totalScore_);
-    drawText(fontLarge_, finalPts, 960, 400, {100, 245, 140, 255}, true);
+    drawText(fontLarge_, finalPts, 960, cardY + 200, COLOR_TEXT_MAIN, true);
 
     int totalShots = kTotalRounds * kArrowsPerRound;
     float accuracy = totalShots > 0 ? (static_cast<float>(totalHits_) / totalShots) * 100.0f : 0.0f;
     std::string accStr = "Precisión: " + std::to_string(static_cast<int>(accuracy)) + "% (" +
                          std::to_string(totalHits_) + " / " + std::to_string(totalShots) + " flechas en diana)";
-    drawText(fontMed_, accStr, 960, 490, {240, 245, 255, 255}, true);
+    drawText(fontMed_, accStr, 960, cardY + 295, COLOR_TEXT_MAIN, true);
 
-    std::string bullseyeStr = "Dianas Perfectas (Centros): " + std::to_string(totalBullseyes_);
-    drawText(fontMed_, bullseyeStr, 960, 550, {255, 215, 60, 255}, true);
+    std::string bullseyeStr = "Dianas Perfectas (X-Ring): " + std::to_string(totalBullseyes_);
+    drawText(fontMed_, bullseyeStr, 960, cardY + 360, COLOR_ACCENT_GOLD, true);
 
-    std::string bestShotStr = "Mejor disparo: +" + std::to_string(bestShotPoints_) + " pts";
-    drawText(fontMed_, bestShotStr, 960, 610, {220, 230, 240, 255}, true);
+    std::string bestShotStr = "Mejor disparo: +" + std::to_string(bestShotPoints_) + " PTS";
+    drawText(fontMed_, bestShotStr, 960, cardY + 420, COLOR_TEXT_MAIN, true);
 
-    drawText(fontMed_, "Presiona [X] o [ENTER] para Jugar de Nuevo", 960, 730, {80, 240, 140, 255}, true);
-    drawText(fontSmall_, "Presiona [O] o [ESC] para Salir al Menú Principal", 960, 785, {180, 190, 200, 220}, true);
-}
-
-void ArcheryGame::renderPauseMenu() {
-    SDL_Rect modal = {480, 200, 960, 680};
-    SDL_SetRenderDrawColor(ren_, 15, 22, 30, 245);
-    SDL_RenderFillRect(ren_, &modal);
-    SDL_SetRenderDrawColor(ren_, 80, 160, 220, 255);
-    SDL_RenderDrawRect(ren_, &modal);
-
-    drawText(fontLarge_, "CONFIGURACIÓN Y PAUSA", 960, 240, {255, 215, 60, 255}, true);
-    drawText(fontSmall_, "Usa [Arriba/Abajo] para seleccionar y [Izq/Der] para ajustar", 960, 310, {180, 200, 220, 220}, true);
-
-    std::vector<std::string> options = {
-        "Sensibilidad Horizontal: " + std::to_string(config_.sensitivityX).substr(0, 4),
-        "Sensibilidad Vertical: " + std::to_string(config_.sensitivityY).substr(0, 4),
-        "Suavizado de Mira: " + std::to_string(config_.smoothing).substr(0, 4),
-        "Zona Muerta Giroscopio: " + std::to_string(config_.deadzone).substr(0, 4),
-        std::string("Invertir Vertical: ") + (config_.invertY ? "SÍ" : "NO"),
-        std::string("Vibración Háptica: ") + (config_.rumbleEnabled ? "ACTIVADA" : "DESACTIVADA"),
-        "► VOLVER AL JUEGO ◄"
-    };
-
-    int startY = 370;
-    for (size_t i = 0; i < options.size(); ++i) {
-        bool selected = (static_cast<int>(i) == pauseMenuIndex_);
-        SDL_Color c = selected ? SDL_Color{80, 240, 140, 255} : SDL_Color{220, 230, 240, 220};
-        drawText(fontMed_, options[i], 960, startY + static_cast<int>(i * 55), c, true);
-    }
-
-    drawText(fontSmall_, "Presiona [X] o [O] para reanudar", 960, 810, {160, 180, 200, 200}, true);
+    drawText(fontMed_, "Presiona [X / ENTER] para Jugar de Nuevo", 960, cardY + 520, COLOR_ACCENT_GREEN, true);
+    drawText(fontSmall_, "Presiona [O / ESC] para Salir al Menú Principal", 960, cardY + 575, COLOR_TEXT_MUTED, true);
 }

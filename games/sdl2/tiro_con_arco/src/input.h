@@ -67,6 +67,9 @@ private:
 
     // Estado del gatillo R2
     float currentTension_ = 0.0f;
+    float drawAnchorAimX_ = 0.0f;
+    float drawAnchorAimY_ = 0.0f;
+    float postShotFreezeTimer_ = 0.0f;
     bool mouseHeld_ = false;
     float mouseTension_ = 0.0f;
 
