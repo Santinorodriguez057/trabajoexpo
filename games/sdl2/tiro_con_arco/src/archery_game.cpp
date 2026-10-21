@@ -736,24 +736,63 @@ void ArcheryGame::renderHUD() {
 }
 
 void ArcheryGame::renderCalibrationScreen() {
-    SDL_Rect modal = {360, 220, 1200, 640};
-    SDL_SetRenderDrawColor(ren_, 12, 18, 25, 240);
+    SDL_Rect modal = {320, 180, 1280, 720};
+    SDL_SetRenderDrawColor(ren_, 12, 18, 25, 245);
     SDL_RenderFillRect(ren_, &modal);
     SDL_SetRenderDrawColor(ren_, 60, 120, 180, 255);
     SDL_RenderDrawRect(ren_, &modal);
 
-    drawText(fontLarge_, "CALIBRACIÓN DE APUNTADO", 960, 270, {255, 215, 60, 255}, true);
+    drawText(fontLarge_, "CALIBRACIÓN DE APUNTADO FÍSICO", 960, 215, {255, 215, 60, 255}, true);
 
-    drawText(fontMed_, "Sostén el DualShock apuntando cómodamente hacia la pantalla.", 960, 380, {240, 240, 250, 255}, true);
-    drawText(fontSmall_, "La orientación física del mando controlará la mira en tiempo real.", 960, 435, {180, 205, 225, 255}, true);
+    // Estado del mando
+    if (input_.hasController() && input_.hasGyro()) {
+        drawText(fontSmall_, "✓ DualShock 4 conectado con Giroscopio y Acelerómetro activos", 960, 275, {80, 230, 140, 255}, true);
+    } else {
+        drawText(fontSmall_, "⚠ Conecta tu DualShock para apuntado por movimiento (o usa ratón/sticks)", 960, 275, {255, 190, 60, 255}, true);
+    }
 
-    drawText(fontMed_, "Controles:", 960, 520, {255, 255, 255, 255}, true);
-    drawText(fontSmall_, "• Orientación DualShock: Apuntar como arma/arco", 960, 570, {220, 230, 240, 255}, true);
-    drawText(fontSmall_, "• Mantener R2: Tensar arco (progresivo)", 960, 610, {220, 230, 240, 255}, true);
-    drawText(fontSmall_, "• Soltar R2: Disparar flecha", 960, 650, {220, 230, 240, 255}, true);
-    drawText(fontSmall_, "• Triángulo [△] o [C]: Recalibrar centro en cualquier momento", 960, 690, {255, 200, 60, 255}, true);
+    // Telemetría en vivo de los sensores
+    char sensorBuf[128];
+    std::snprintf(sensorBuf, sizeof(sensorBuf), "Vertical (Pitch): %+.1f°   |   Horizontal (Yaw): %+.1f°   |   Inclinación (Roll): %+.1f°",
+                  input_.getPitchDegrees(), input_.getYawDegrees(), input_.getRollDegrees());
+    drawText(fontSmall_, sensorBuf, 960, 310, {180, 215, 245, 230}, true);
 
-    drawText(fontLarge_, "Presiona [X] o [ENTER] para Comenzar", 960, 770, {80, 240, 140, 255}, true);
+    // Marco visual interactivo con diana miniatura y punto de mira en vivo
+    int previewBoxX = 760;
+    int previewBoxY = 350;
+    int previewBoxW = 400;
+    int previewBoxH = 220;
+    SDL_Rect pBox = {previewBoxX, previewBoxY, previewBoxW, previewBoxH};
+    SDL_SetRenderDrawColor(ren_, 20, 30, 42, 255);
+    SDL_RenderFillRect(ren_, &pBox);
+    SDL_SetRenderDrawColor(ren_, 50, 90, 130, 255);
+    SDL_RenderDrawRect(ren_, &pBox);
+
+    // Centro de la caja
+    int pCenterX = previewBoxX + previewBoxW / 2;
+    int pCenterY = previewBoxY + previewBoxH / 2;
+    drawCircleFilled(pCenterX, pCenterY, 8, {255, 215, 40, 200});
+    drawCircleOutline(pCenterX, pCenterY, 25, {220, 60, 60, 160});
+    drawCircleOutline(pCenterX, pCenterY, 50, {40, 140, 220, 140});
+
+    // Punto de mira en tiempo real
+    const AimState& aim = input_.getState();
+    int liveX = pCenterX + static_cast<int>(aim.x * (previewBoxW / 2 - 15));
+    int liveY = pCenterY + static_cast<int>(aim.y * (previewBoxH / 2 - 15));
+    liveX = std::clamp(liveX, previewBoxX + 10, previewBoxX + previewBoxW - 10);
+    liveY = std::clamp(liveY, previewBoxY + 10, previewBoxY + previewBoxH - 10);
+
+    drawCircleFilled(liveX, liveY, 6, {80, 240, 140, 255});
+    drawCircleOutline(liveX, liveY, 14, {80, 240, 140, 255});
+    SDL_SetRenderDrawColor(ren_, 80, 240, 140, 200);
+    SDL_RenderDrawLine(ren_, liveX - 18, liveY, liveX + 18, liveY);
+    SDL_RenderDrawLine(ren_, liveX, liveY - 18, liveX, liveY + 18);
+
+    drawText(fontSmall_, "Mueve e inclina el mando para probar la mira en tiempo real", 960, 585, {200, 220, 240, 220}, true);
+
+    drawText(fontSmall_, "• Mantener R2: Tensar arco   • Soltar R2: Disparar flecha   • [△] o [C]: Centrar mira", 960, 640, {255, 215, 80, 255}, true);
+
+    drawText(fontLarge_, "Presiona [X] o [ENTER] para Fijar el Centro y Jugar", 960, 720, {80, 245, 140, 255}, true);
 }
 
 void ArcheryGame::renderRoundSummary() {

@@ -52,21 +52,30 @@ void InputManager::closeController() {
 }
 
 void InputManager::calibrate() {
+    // Si tenemos sensores, tomar la posición actual del mando como el centro físico (0,0)
+    if (controller_ && hasAccel_) {
+        float accel[3] = {0, 0, -9.8f};
+        SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_ACCEL, accel, 3);
+
+        calibratedPitch_ = std::atan2(accel[1], -accel[2]);
+        calibratedRoll_ = std::atan2(accel[0], -accel[2]);
+        currentPitchAngle_ = calibratedPitch_;
+        currentRollAngle_ = calibratedRoll_;
+    } else {
+        calibratedPitch_ = 0.20f;
+        calibratedRoll_ = 0.0f;
+        currentPitchAngle_ = 0.20f;
+        currentRollAngle_ = 0.0f;
+    }
+
+    currentYawAngle_ = 0.0f;
     targetAimX_ = 0.0f;
     targetAimY_ = 0.0f;
     state_.x = 0.0f;
     state_.y = 0.0f;
     state_.calibrated = true;
 
-    if (controller_ && hasGyro_) {
-        float g[3] = {0, 0, 0};
-        SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_GYRO, g, 3);
-        gyroBiasX_ = g[0];
-        gyroBiasY_ = g[1];
-        gyroBiasZ_ = g[2];
-    }
-
-    // Feedback táctil suave de confirmación de centrado
+    // Vibración suave de confirmación
     setRumble(0.2f, 0.4f, 150);
 }
 
@@ -108,7 +117,7 @@ void InputManager::handleEvent(const SDL_Event& ev) {
         if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_START || ev.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
             pausePressed_ = true;
         } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_Y || ev.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
-            // Triangulo o L1 recalibra / recentra la mira
+            // Triángulo o L1 recalibra / recentra la mira instantáneamente
             calibrate();
         } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
             confirmPressed_ = true;
@@ -124,14 +133,14 @@ void InputManager::handleEvent(const SDL_Event& ev) {
             confirmPressed_ = true;
         }
     } else if (ev.type == SDL_MOUSEMOTION) {
-        // Fallback de apuntado con ratón si no se usa mando
+        // Fallback de ratón si no hay mando con giroscopio
         if (!controller_ || !hasGyro_) {
-            targetAimX_ += (ev.motion.xrel * 0.0025f) * config_.sensitivityX;
-            float yChange = (ev.motion.yrel * 0.0025f) * config_.sensitivityY;
+            targetAimX_ += (ev.motion.xrel * 0.003f) * config_.sensitivityX;
+            float yChange = (ev.motion.yrel * 0.003f) * config_.sensitivityY;
             if (config_.invertY) yChange = -yChange;
             targetAimY_ += yChange;
-            targetAimX_ = std::clamp(targetAimX_, -1.1f, 1.1f);
-            targetAimY_ = std::clamp(targetAimY_, -0.9f, 0.9f);
+            targetAimX_ = std::clamp(targetAimX_, -1.15f, 1.15f);
+            targetAimY_ = std::clamp(targetAimY_, -0.90f, 0.90f);
         }
     } else if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT) {
         mouseHeld_ = true;
@@ -143,56 +152,78 @@ void InputManager::handleEvent(const SDL_Event& ev) {
 void InputManager::update(float dt) {
     if (dt <= 0.0f) dt = 0.016f;
 
-    // 1. Apuntado con sensores de movimiento del DualShock
-    if (controller_ && hasGyro_) {
+    // 1. Apuntado por ORIENTACIÓN FÍSICA con sensores DualShock 4
+    if (controller_ && hasGyro_ && hasAccel_) {
         float gyro[3] = {0, 0, 0};
+        float accel[3] = {0, 0, -9.8f};
         SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_GYRO, gyro, 3);
+        SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_ACCEL, accel, 3);
 
-        // Descontar sesgo de reposo
-        float gx = gyro[0] - gyroBiasX_;
-        float gy = gyro[1] - gyroBiasY_;
-        float gz = gyro[2] - gyroBiasZ_;
+        // Vector de gravedad normalizado
+        float norm = std::sqrt(accel[0]*accel[0] + accel[1]*accel[1] + accel[2]*accel[2]);
+        float gx_norm = 0.0f, gy_norm = 0.2f, gz_norm = -0.98f;
+        if (norm > 0.01f) {
+            gx_norm = accel[0] / norm;
+            gy_norm = accel[1] / norm;
+            gz_norm = accel[2] / norm;
+        }
 
-        // Giroscopio DualShock 4:
-        // gy: giro sobre eje vertical (yaw / mirar izq-der)
-        // gz: inclinación lateral tipo volante (roll)
-        // gx: cabeceo arriba/abajo (pitch)
-        // Combinamos yaw y roll para que apuntar tanto girando muñeca como inclinando se sienta 100% natural
-        float turnRate = -gy - 0.70f * gz;
-        float pitchRate = -gx;
+        // A. PITCH (Inclinación vertical absoluta calculada desde el acelerómetro)
+        // En posición neutra: accel.y ≈ +2.04, accel.z ≈ -9.91
+        // Inclinar arriba: accel.y sube -> pitch aumenta
+        // Inclinar abajo: accel.y baja -> pitch disminuye
+        float pitchFromAccel = std::atan2(accel[1], -accel[2]);
+        // Filtro complementario: respuesta inmediata del giro sin vibración
+        currentPitchAngle_ = 0.93f * (currentPitchAngle_ + (-gyro[0]) * dt) + 0.07f * pitchFromAccel;
 
-        if (config_.invertY) pitchRate = -pitchRate;
+        // B. ROLL (Inclinación lateral tipo volante desde el acelerómetro)
+        float rollFromAccel = std::atan2(accel[0], -accel[2]);
+        currentRollAngle_ = 0.93f * (currentRollAngle_ + gyro[1] * dt) + 0.07f * rollFromAccel;
 
-        float filteredTurn = applyDeadzone(turnRate, config_.deadzone);
-        float filteredPitch = applyDeadzone(pitchRate, config_.deadzone);
+        // C. YAW (Giro horizontal izquierda / derecha alrededor del eje de gravedad)
+        // Rotación alrededor de la gravedad vertical (combina gyro[2] y gyro[1] según el ángulo)
+        float yawRate = (gyro[0] * gx_norm + gyro[1] * gy_norm + gyro[2] * gz_norm);
+        float filteredYawRate = applyDeadzone(yawRate, config_.deadzone);
+        currentYawAngle_ += filteredYawRate * dt;
 
-        // Integración de orientación angular a coordenadas de mira
-        float moveX = filteredTurn * config_.sensitivityX * dt * 1.6f;
-        float moveY = filteredPitch * config_.sensitivityY * dt * 1.6f;
+        // Combinación de giro de muñeca (Yaw) + inclinación de volante (Roll)
+        float deltaPitch = currentPitchAngle_ - calibratedPitch_;
+        float deltaRoll = currentRollAngle_ - calibratedRoll_;
+        float effectiveYaw = currentYawAngle_ - 0.55f * deltaRoll;
 
-        targetAimX_ += moveX;
-        targetAimY_ += moveY;
+        // Mapeo angular corregido según orientación física del DualShock:
+        // - Apuntar arriba -> mueve arriba
+        // - Apuntar abajo -> mueve abajo
+        // - Mover derecha -> mueve derecha
+        // - Mover izquierda -> mueve izquierda
+        const float kScaleX = 1.0f / 0.26f;
+        const float kScaleY = 1.0f / 0.20f;
 
-        // Limitar dentro del campo visual útil
-        targetAimX_ = std::clamp(targetAimX_, -1.15f, 1.15f);
-        targetAimY_ = std::clamp(targetAimY_, -0.90f, 0.90f);
+        float horizComponent = (deltaPitch * kScaleX) * config_.sensitivityX;
+        float vertComponent = -(effectiveYaw * kScaleY) * config_.sensitivityY;
 
-        // Stick derecho como ajuste auxiliar
+        targetAimX_ = horizComponent;
+        if (config_.invertY) vertComponent = -vertComponent;
+        targetAimY_ = vertComponent;
+
+        // Ajuste auxiliar con stick analógico derecho si se desea recortar
         Sint16 rx = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_RIGHTX);
         Sint16 ry = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_RIGHTY);
-        if (std::abs(rx) > 4000) {
-            targetAimX_ += (rx / 32767.0f) * config_.sensitivityX * dt * 1.2f;
-            targetAimX_ = std::clamp(targetAimX_, -1.15f, 1.15f);
+        if (std::abs(rx) > 5000) {
+            calibratedPitch_ -= (rx / 32767.0f) * dt * 0.8f;
         }
-        if (std::abs(ry) > 4000) {
-            float stickY = (ry / 32767.0f);
+        if (std::abs(ry) > 5000) {
+            float stickY = (ry / 32767.0f) * dt * 0.8f;
             if (config_.invertY) stickY = -stickY;
-            targetAimY_ += stickY * config_.sensitivityY * dt * 1.2f;
-            targetAimY_ = std::clamp(targetAimY_, -0.90f, 0.90f);
+            currentYawAngle_ += stickY;
         }
+
+        // Límites útiles del campo de tiro
+        targetAimX_ = std::clamp(targetAimX_, -1.15f, 1.15f);
+        targetAimY_ = std::clamp(targetAimY_, -0.90f, 0.90f);
     }
 
-    // 2. Filtro de suavizado (Exponential Smoothing)
+    // 2. Filtro de suavizado (Exponential Smoothing) para máxima fluidez
     float smoothFactor = 1.0f - std::pow(std::clamp(config_.smoothing, 0.0f, 0.95f), dt * 60.0f);
     state_.x += (targetAimX_ - state_.x) * smoothFactor;
     state_.y += (targetAimY_ - state_.y) * smoothFactor;
@@ -206,7 +237,7 @@ void InputManager::update(float dt) {
         }
     }
 
-    // Fallback con ratón / teclado
+    // Fallback con ratón
     if (mouseHeld_) {
         mouseTension_ = std::min(1.0f, mouseTension_ + dt * 1.8f);
         triggerVal = std::max(triggerVal, mouseTension_);
@@ -218,7 +249,6 @@ void InputManager::update(float dt) {
 
     if (triggerVal > 0.08f) {
         state_.isDrawing = true;
-        // La tensión aumenta progresivamente hacia el nivel de presión del gatillo
         if (currentTension_ < triggerVal) {
             currentTension_ = std::min(triggerVal, currentTension_ + dt * 2.2f);
         } else {
@@ -237,18 +267,13 @@ void InputManager::update(float dt) {
         setLED(ledR, ledG, ledB);
 
     } else {
-        // Gatillo liberado
         if (wasDrawing) {
             if (currentTension_ >= 0.15f) {
-                // ¡Disparo efectuado!
                 state_.justFired = true;
                 state_.releaseTension = currentTension_;
-                // Golpe seco de retroceso en vibración
                 setRumble(0.8f, 1.0f, 120);
-                // Destello dorado/blanco momentáneo
                 setLED(255, 230, 100);
             } else {
-                // Canceló el tensado sin suficiente fuerza
                 setLED(20, 180, 200);
             }
         } else {

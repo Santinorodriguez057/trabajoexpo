@@ -29,8 +29,14 @@ public:
     const AimState& getState() const { return state_; }
     bool hasController() const { return controller_ != nullptr; }
     bool hasGyro() const { return hasGyro_; }
+    bool hasAccel() const { return hasAccel_; }
 
-    // Botones de accion
+    // Telemetría de sensores para calibración y diagnóstico
+    float getPitchDegrees() const { return currentPitchAngle_ * 57.2957795f; }
+    float getYawDegrees() const { return currentYawAngle_ * 57.2957795f; }
+    float getRollDegrees() const { return currentRollAngle_ * 57.2957795f; }
+
+    // Botones de acción
     bool pausePressed() const { return pausePressed_; }
     bool confirmPressed() const { return confirmPressed_; }
     bool cancelPressed() const { return cancelPressed_; }
@@ -50,13 +56,16 @@ private:
     float targetAimX_ = 0.0f;
     float targetAimY_ = 0.0f;
 
-    // Calibracion y sesgo
-    float gyroBiasX_ = 0.0f;
-    float gyroBiasY_ = 0.0f;
-    float gyroBiasZ_ = 0.0f;
+    // Orientación física absoluta calculada con fusión de sensores (AHRS)
+    float currentPitchAngle_ = 0.0f; // radianes
+    float currentYawAngle_ = 0.0f;   // radianes
+    float currentRollAngle_ = 0.0f;  // radianes
+
+    // Referencias de calibración (posición de tiro cómoda del usuario)
+    float calibratedPitch_ = 0.0f;
+    float calibratedRoll_ = 0.0f;
 
     // Estado del gatillo R2
-    float lastTriggerValue_ = 0.0f;
     float currentTension_ = 0.0f;
     bool mouseHeld_ = false;
     float mouseTension_ = 0.0f;
