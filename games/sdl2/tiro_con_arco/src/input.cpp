@@ -312,3 +312,4 @@ void InputManager::update(float dt) {
     float smoothFactor = 1.0f - std::pow(std::clamp(config_.smoothing, 0.0f, 0.90f), dt * 60.0f);
     state_.x += (targetAimX_ - state_.x) * smoothFactor;
     state_.y += (targetAimY_ - state_.y) * smoothFactor;
+}

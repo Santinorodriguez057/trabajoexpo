@@ -15,3 +15,4 @@
 duelo_vaqueros	Duelo de Vaqueros	Juego de reflejos y giroscopio	build/bin/duelo_vaqueros	build/bin/duelo_vaqueros.exe
 test_mando	Test de Mando	Prueba todos los ejes y sensores de tu mando	build/bin/test_mando	build/bin/test_mando.exe
 tiro_con_arco	Tiro con Arco	Apuntado físico con DualShock y gatillo R2	build/bin/tiro_con_arco	build/bin/tiro_con_arco.exe
+carrera_turbo	Carrera Turbo	Conducción en primera persona con volante DualShock	build/bin/carrera_turbo	build/bin/carrera_turbo.exe

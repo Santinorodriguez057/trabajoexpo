@@ -56,6 +56,7 @@ echo   O ejecuta individualmente:
 echo     build\bin\duelo_vaqueros.exe
 echo     build\bin\test_mando.exe
 echo     build\bin\tiro_con_arco.exe
+echo     build\bin\carrera_turbo.exe
 echo ========================================================
 echo.
 pause

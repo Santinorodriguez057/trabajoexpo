@@ -12,8 +12,8 @@ Cada juego es un **ejecutable independiente** (C++/SDL2 o build de Unity) que el
 flowchart LR
     M[Menú SDL2/C++<br/>Soporte mando PS4] -->|lanza proceso| G1[Duelo de Vaqueros<br/>SDL2 / 1v1]
     M -->|lanza proceso| G2[Tiro con Arco<br/>SDL2 / Giroscopio]
-    M -->|lanza proceso| G3[Test de Mando<br/>SDL2 / Diagnóstico]
-    M -->|lanza proceso| G4[Juegos Unity<br/>Opcional]
+    M -->|lanza proceso| G3[Carrera Turbo<br/>SDL2 / Volante]
+    M -->|lanza proceso| G4[Test de Mando<br/>SDL2 / Diagnóstico]
     G1 -->|al salir| M
     G2 -->|al salir| M
     G3 -->|al salir| M
@@ -40,6 +40,7 @@ flowchart LR
 │   ├── sdl2/                   # Juegos nativos en C++ / SDL2
 │   │   ├── duelo_vaqueros/     # Duelo Western 1v1 con reflejos y bullet-time
 │   │   ├── tiro_con_arco/      # Arquería en 1ª persona con apuntado por giroscopio
+│   │   ├── carrera_turbo/      # Conducción en 1ª persona con volante DualShock
 │   │   ├── test_mando/         # Herramienta de diagnóstico de ejes, giroscopio y vibración
 │   │   └── template_game/      # Plantilla base para añadir nuevos juegos
 │   └── unity/                  # Espacio para proyectos Unity exportados
@@ -152,6 +153,30 @@ Herramienta de diagnóstico visual para verificar el estado de los controles ant
 |---|---|---|
 | **Probar Vibración** | Botón **Triángulo [△]** | Tecla **Espacio** |
 | **Salir al Menú** | Botón **Círculo [O]** | Tecla **ESC** |
+
+---
+
+### 4. Carrera Turbo (Conducción Neobrutalista en Primera Persona)
+Juego de carreras arcade en primera persona con tecnología pseudo-3D rasterizada por segmentos estilo *OutRun*, con estética visual **Neobrutalista** idéntica a *Duelo de Vaqueros* (bloques de color saturados, bordes negros gruesos y sombras duras sin degradado).
+
+* **Volante Físico por Giroscopio**: Sostén el DualShock 4 con ambas manos frente a ti e inclínalo hacia los lados para girar como un volante de carreras real (estilo *Gran Turismo* con Sixaxis).
+* **Cabina en Primera Persona con Volante Animado**: En la parte inferior se renderiza el volante deportivo con franja de centrado que gira en tiempo real exactamente según la inclinación física del mando.
+* **Aceleración y Frenado Progresivo**: Gatillos analógicos **R2** (acelerador) y **L2** (freno / reversa).
+* **Física Arcade con Curvas y Desniveles**: Derrapes con freno de mano, fuerza centrífuga en curvas, pérdida de adherencia en el césped y tráfico dinámico que esquivar.
+* **Sonido Procedural de Motor V8**: Sonido del motor sintetizado en tiempo real según las RPM y marchas (1ª a 5ª), con chirrido de neumáticos al derrapar.
+* **Tacómetro LED en el Mando**: La barra de luz LED del DualShock cambia de color según las revoluciones (Verde → Amarillo → Naranja → Rojo parpadeante en corte de inyección).
+* **Carrera contrarreloj con Checkpoints**: Cruza los arcos de checkpoint para sumar tiempo (+25s) y completar el circuito antes de que el reloj llegue a cero.
+
+| Acción | Mando DualShock 4 | Teclado |
+|---|---|---|
+| **Girar Volante** | Inclinar mando a los lados (giroscopio) | Teclas **A / D** o **← / →** |
+| **Acelerar** | **Gatillo R2** (progresivo) | Tecla **W** o **↑** |
+| **Frenar / Reversa** | **Gatillo L2** (progresivo) | Tecla **S** o **↓** |
+| **Freno de Mano / Derrape** | Botón **Cuadrado [□]** o **X** | Barra **Espacio** |
+| **Recalibrar Volante Centrado** | Botón **Triángulo [△]** o **L1** | Tecla **[C]** o **[R]** |
+| **Pausa / Ajustes de Dirección** | Botón **Options / Start** | Tecla **[ESC]** |
+| **Salir al Menú** | Botón **Círculo [O]** | Tecla **[ESC]** |
+
 
 ---
 
