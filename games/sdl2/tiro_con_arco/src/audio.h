@@ -14,6 +14,7 @@ public:
     void playDraw(float tension);
     void playShoot();
     void playImpact();
+    void playError();
     void playBullseye();
     void playFanfare();
 
@@ -23,6 +24,7 @@ private:
     Mix_Chunk* sfxTensar_ = nullptr;
     Mix_Chunk* sfxDisparo_ = nullptr;
     Mix_Chunk* sfxImpacto_ = nullptr;
+    Mix_Chunk* sfxError_ = nullptr;
     Mix_Chunk* sfxDiana_ = nullptr;
     Mix_Chunk* sfxVictoria_ = nullptr;
 

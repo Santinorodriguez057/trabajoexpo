@@ -117,7 +117,7 @@ Juego de puntería en primera persona ambientado en un puesto de feria neobrutal
 * **Pistola en primera persona**: Modelo low-poly con volumen, caras sombreadas, manos y detalles neobrutalistas; gira en horizontal y vertical con la mira y revela sus laterales al apuntar hacia los costados.
 * **Mira y arma sincronizadas**: La pistola acompaña el apuntado horizontal y verticalmente, y la mira vuelve al centro al cerrar cada ronda. La calibración toma como centro la postura cómoda actual del jugador.
 * **Reinicio accesible**: El menú de pausa permite volver a la ronda 1 y reiniciar la puntuación de la partida.
-* **Estética de feria neobrutalista**: Marquesina a rayas, bombillas, paneles de color, contornos negros y sombras marcadas.
+* **Estética de feria neobrutalista**: Marquesina a rayas, bombillas, panel trasero dividido en cinco carriles, mostrador y piso a cuadros con contornos negros y sombras marcadas.
 * **Récord Persistente**: Guarda la puntuación máxima en disco y avisa al superar el récord.
 
 | Acción | Mando DualShock 4 | Teclado / Ratón |

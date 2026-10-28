@@ -759,23 +759,15 @@ void ArcheryGame::drawFlat(float cx, float cy, float w, float h, float angle, SD
         for (int i = 0; i < 4; ++i) {
             const SDL_FPoint& a = points[i];
             const SDL_FPoint& b = points[(i + 1) % 4];
-            // Sample at the scanline center to avoid one-pixel gaps between
-            // adjacent rows when filling steeply rotated thin details.
-            const float sampleY = static_cast<float>(y) + 0.5f;
-            if ((a.y <= sampleY && b.y > sampleY) || (b.y <= sampleY && a.y > sampleY)) {
-                const float t = (sampleY - a.y) / (b.y - a.y);
+            if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+                const float t = (static_cast<float>(y) - a.y) / (b.y - a.y);
                 intersections[count++] = a.x + t * (b.x - a.x);
             }
         }
         if (count < 2) continue;
-        float leftF = intersections[0];
-        float rightF = intersections[1];
-        for (int i = 2; i < count; ++i) {
-            leftF = std::min(leftF, intersections[i]);
-            rightF = std::max(rightF, intersections[i]);
-        }
-        const int left = static_cast<int>(std::floor(leftF));
-        const int right = static_cast<int>(std::ceil(rightF));
+        if (intersections[0] > intersections[1]) std::swap(intersections[0], intersections[1]);
+        const int left = static_cast<int>(std::floor(intersections[0]));
+        const int right = static_cast<int>(std::ceil(intersections[1]));
         SDL_RenderDrawLine(ren_, left, y, right, y);
     }
 }
@@ -1116,27 +1108,6 @@ void ArcheryGame::renderFairTargets() {
         SDL_RenderDrawLine(ren_, cx - rx + 2, cy - ry, cx + rx - 2, cy - ry);
         SDL_RenderDrawLine(ren_, cx - rx + 2, cy + ry, cx + rx - 2, cy + ry);
     };
-    auto fillRotatedEllipse = [&](float cx, float cy, float rx, float ry, float angle, SDL_Color color) {
-        // Rasterize an ellipse in its own local coordinates, then rotate every
-        // covered point. This keeps the can lids elliptical while it falls;
-        // drawing them as thin rectangles turns them into long strips.
-        const float radians = angle * 3.14159265f / 180.0f;
-        const float cosA = std::cos(radians);
-        const float sinA = std::sin(radians);
-        const int localRy = std::max(1, static_cast<int>(std::ceil(ry)));
-        SDL_SetRenderDrawColor(ren_, color.r, color.g, color.b, color.a);
-        for (int dy = -localRy; dy <= localRy; ++dy) {
-            const float ratio = 1.0f - static_cast<float>(dy * dy) / (ry * ry);
-            const int halfWidth = static_cast<int>(std::ceil(rx * std::sqrt(std::max(0.0f, ratio))));
-            for (int dx = -halfWidth; dx <= halfWidth; ++dx) {
-                const float x = static_cast<float>(dx);
-                const float y = static_cast<float>(dy);
-                const int px = static_cast<int>(std::lround(cx + x * cosA - y * sinA));
-                const int py = static_cast<int>(std::lround(cy + x * sinA + y * cosA));
-                SDL_RenderDrawPoint(ren_, px, py);
-            }
-        }
-    };
     for (int i = 0; i < kTargetCount; ++i) {
         const float targetWorldX = targetX_ + targetScreenOffsetX_[i] * targetDistance_ / fov;
         const float targetWorldY = targetY_ - targetScreenOffsetY_[i] * targetDistance_ / fov;
@@ -1195,29 +1166,16 @@ void ArcheryGame::renderFairTargets() {
                 SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
             }
 
-            // Keep the original can body and rotate its complete silhouette.
-            // Only the end caps are redrawn here; placing compact ellipses at
-            // the transformed ends avoids the thin horizontal lid strips.
+            // El cuerpo, las tapas y la franja usan la misma rotación durante
+            // toda la caída; no hay cambio de sprite ni salto de tamaño.
             drawFlat(fallenX + 7, fallenY + 7, static_cast<float>(bodyW), static_cast<float>(bodyH), angle, COLOR_BORDER);
             drawFlat(fallenX, fallenY, static_cast<float>(bodyW), static_cast<float>(bodyH), angle, canColor);
-            const float innerW = static_cast<float>(bodyW - 12);
-            const float innerH = static_cast<float>(bodyH - 14);
-            drawFlat(fallenX - bodyW * 0.28f, fallenY, innerW * 0.12f, innerH * 0.82f,
-                     angle, {255, 255, 248, 190});
-            drawFlat(fallenX, fallenY, innerW * 0.70f, 10.0f, angle, COLOR_BORDER);
-            drawFlat(fallenX, fallenY, innerW * 0.55f, 5.0f, angle,
+            drawFlat(fallenX - 4, fallenY - 2, static_cast<float>(bodyW / 6), static_cast<float>(bodyH - 14), angle, {255, 255, 248, 210});
+            drawFlat(fallenX, fallenY - static_cast<float>(bodyH) * 0.42f, static_cast<float>(bodyW * 0.88f), 8.0f, angle, {195, 203, 208, 255});
+            drawFlat(fallenX, fallenY + static_cast<float>(bodyH) * 0.42f, static_cast<float>(bodyW * 0.88f), 8.0f, angle, {195, 203, 208, 255});
+            drawFlat(fallenX, fallenY, static_cast<float>(bodyW * 0.70f), 10.0f, angle, COLOR_BORDER);
+            drawFlat(fallenX, fallenY, static_cast<float>(bodyW * 0.55f), 5.0f, angle,
                      targetKind_[i] == 2 ? COLOR_ACCENT_GOLD : COLOR_CARD_BG);
-
-            const float capLocalY = bodyH * 0.5f - 5.0f;
-            const float radians = angle * 3.14159265f / 180.0f;
-            const float cosA = std::cos(radians);
-            const float sinA = std::sin(radians);
-            for (float localY : {-capLocalY, capLocalY}) {
-                const float capX = fallenX - localY * sinA;
-                const float capY = fallenY + localY * cosA;
-                fillRotatedEllipse(capX, capY, bodyW * 0.46f, 6.0f, angle, COLOR_BORDER);
-                fillRotatedEllipse(capX, capY, bodyW * 0.36f, 3.5f, angle, {195, 203, 208, 255});
-            }
             // Chispas metálicas de impacto
             const Uint8 particleAlpha = static_cast<Uint8>((1.0f - fallProgress) * 235.0f);
             if (particleAlpha > 10) {
@@ -1446,7 +1404,7 @@ void ArcheryGame::renderGun() {
                 {x0,y0,z1}, {x1,y0,z1}, {x1,y1,z1}, {x0,y1,z1}
             };
             const int indices[6][4] = {
-                {0,3,2,1}, {4,5,6,7}, {0,4,7,3},
+                {0,3,2,1}, {4,5,6,7}, {0,4,7,3},    
                 {1,2,6,5}, {0,1,5,4}, {3,7,6,2}
             };
             const SDL_Color shades[6] = {base, side, side, side, side, highlight};

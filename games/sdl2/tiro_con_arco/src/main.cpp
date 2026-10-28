@@ -2,6 +2,7 @@
 #include <SDL_ttf.h>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -44,6 +45,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "Error SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
     if (TTF_Init() < 0) {
         std::fprintf(stderr, "Error TTF_Init: %s\n", TTF_GetError());

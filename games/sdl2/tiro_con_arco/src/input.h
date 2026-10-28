@@ -63,10 +63,6 @@ private:
     // Referencias de calibración (posición de tiro cómoda del usuario)
     float calibratedPitch_ = 0.0f;
     float calibratedRoll_ = 0.0f;
-    float gyroBiasX_ = 0.0f;
-    float gyroBiasY_ = 0.0f;
-    float gyroBiasZ_ = 0.0f;
-
     // Sesgo de reposo del giroscopio, estimado durante la calibración.
     float gyroBiasX_ = 0.0f;
     float gyroBiasY_ = 0.0f;

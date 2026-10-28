@@ -1,5 +1,6 @@
 #include "ui.h"
 #include <cstdio>
+#include <cmath>
 #include <algorithm>
 #include <vector>
 

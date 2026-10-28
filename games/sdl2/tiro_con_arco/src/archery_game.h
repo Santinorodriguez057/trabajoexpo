@@ -25,6 +25,8 @@ struct FlyingBullet {
     float initialSpeed = 0.0f;
     bool active = false;
     std::vector<SDL_FPoint> trail;
+    float impactFlash = 0.0f;
+    SDL_FPoint impactPoint{0.0f, 0.0f};
 };
 
 struct FloatingText {
@@ -35,6 +37,22 @@ struct FloatingText {
     float maxLife;
     SDL_Color color;
     float scale;
+};
+
+struct MissMark {
+    float x;
+    float y;
+    float life;
+};
+
+struct ConfettiPiece {
+    float x;
+    float y;
+    float vx;
+    float vy;
+    float life;
+    SDL_Color color;
+    int size;
 };
 
 enum class GameState {
@@ -80,6 +98,7 @@ private:
 
     // Proyección 3D a pantalla 1920x1080
     SDL_Point project3D(float x, float y, float z);
+    SDL_Point getMuzzleScreenPos() const;
 
     SDL_Renderer* ren_;
     TTF_Font* fontLarge_;
@@ -102,6 +121,7 @@ private:
     int totalScore_ = 0;
     int roundScore_ = 0;
     int targetsDownThisRound_ = 0;
+    int comboHits_ = 0;
     int totalHits_ = 0;
     int totalBullseyes_ = 0;
     int bestShotPoints_ = 0;
@@ -115,6 +135,10 @@ private:
     static constexpr int kTargetCount = 5;
     float targetScreenOffsetX_[kTargetCount] = {};
     float targetScreenOffsetY_[kTargetCount] = {};
+    float targetBaseOffsetX_[kTargetCount] = {};
+    float targetBaseOffsetY_[kTargetCount] = {};
+    int targetKind_[kTargetCount] = {}; // 0 normal, 1 penalización, 2 dorado
+    bool targetVisible_[kTargetCount] = {true, true, true, true, true};
     float targetFallAngle_[kTargetCount] = {};
     float targetFallVelocity_[kTargetCount] = {};
     bool targetFallen_[kTargetCount] = {};
@@ -123,14 +147,29 @@ private:
     FlyingBullet activeBullet_;
     std::vector<TargetImpact> targetImpacts_;
     std::vector<FloatingText> floatingTexts_;
+    std::vector<MissMark> missMarks_;
+    std::vector<ConfettiPiece> confetti_;
 
     float muzzleFlashTimer_ = 0.0f;
+    float shotRecoil_ = 0.0f;
+    float reticlePulseTimer_ = 0.0f;
+    float screenFlashTimer_ = 0.0f;
+    int screenFlashAlpha_ = 0;
+    int missFlashCount_ = 0;
+    SDL_Color screenFlashColor_{255, 240, 210, 255};
     float weaponSwayX_ = 0.0f;
 
     // Menú de pausa
     int pauseMenuIndex_ = 0;
+    int lastHudScore_ = -1;
 
     // Variables de tiempo y temblor
     float roundTime_ = 0.0f;
     float screenShakeTrauma_ = 0.0f;
+    float fairCelebrationTimer_ = 0.0f;
+    float hudEntryTimer_ = 0.0f;
+    float scorePulseTimer_ = 0.0f;
+    float roundBannerTimer_ = 0.0f;
+    float roundEndTimer_ = 0.0f;
+    bool roundEnding_ = false;
 };

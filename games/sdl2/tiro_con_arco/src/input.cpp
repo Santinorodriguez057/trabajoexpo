@@ -250,7 +250,7 @@ void InputManager::update(float dt) {
         filteredTurnRate_ += (turnRate - filteredTurnRate_) * filterAlpha;
         filteredPitchRate_ += (pitchRate - filteredPitchRate_) * filterAlpha;
 
-        float effectiveDeadzone = std::max(config_.deadzone, 0.025f);
+        float effectiveDeadzone = std::clamp(config_.deadzone, 0.01f, 0.25f);
 
         float filteredTurn = applyDeadzone(filteredTurnRate_, effectiveDeadzone);
         float pitchForAim = config_.invertY ? -filteredPitchRate_ : filteredPitchRate_;
@@ -270,12 +270,15 @@ void InputManager::update(float dt) {
         // Stick derecho como ajuste analógico auxiliar suave
         Sint16 rx = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_RIGHTX);
         Sint16 ry = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_RIGHTY);
-        if (std::abs(rx) > 3500) {
-            targetAimX_ += (rx / 32767.0f) * config_.sensitivityX * dt * 1.5f;
+        const float stickDeadzone = std::clamp(config_.deadzone, 0.01f, 0.25f);
+        const float stickX = applyDeadzone(rx / 32767.0f, stickDeadzone);
+        const float stickYRaw = applyDeadzone(ry / 32767.0f, stickDeadzone);
+        if (stickX != 0.0f) {
+            targetAimX_ += stickX * config_.sensitivityX * dt * 1.5f;
             targetAimX_ = std::clamp(targetAimX_, -1.15f, 1.15f);
         }
-        if (std::abs(ry) > 3500) {
-            float stickY = (ry / 32767.0f);
+        if (stickYRaw != 0.0f) {
+            float stickY = stickYRaw;
             if (config_.invertY) stickY = -stickY;
             targetAimY_ += stickY * config_.sensitivityY * dt * 1.5f;
             targetAimY_ = std::clamp(targetAimY_, -0.90f, 0.90f);
