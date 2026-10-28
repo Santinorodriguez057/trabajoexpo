@@ -9,6 +9,7 @@ enum class PropType {
     PINE_TREE,
     BILLBOARD_NEO,
     CHECKPOINT_ARCH,
+    FINISH_LINE_ARCH,
     LAMPPOST,
     ROCK
 };
@@ -48,24 +49,27 @@ class Road {
 public:
     Road();
 
-    void generateTrack();
+    void generateTrack(bool isTimeAttack = false);
     void update(float dt);
 
     const RoadSegment& getSegment(int index) const;
     const RoadSegment& findSegment(float z) const;
     int getSegmentCount() const { return static_cast<int>(segments_.size()); }
     float getTrackLength() const { return trackLength_; }
+    const std::vector<RoadSegment>& getSegments() const { return segments_; }
 
     const std::vector<TrafficCar>& getTraffic() const { return traffic_; }
     std::vector<TrafficCar>& getTraffic() { return traffic_; }
+    void clearTraffic() { traffic_.clear(); }
+    void enableTraffic(bool enable);
 
     static constexpr float kSegmentLength = 12.0f; // metros por segmento
-    static constexpr float kRoadWidth = 1400.0f;   // ancho 3D
+    static constexpr float kRoadWidth = 4400.0f;   // Ancho 3D ampliado (carriles notablemente más anchos y espaciosos)
 
 private:
     void addSegment(float curve, float y);
     void addStraight(int num);
-    void addCurve(int num, float curve, float endY = 0.0f);
+    void addCurve(int num, float curve, float endY = -99999.0f);
     void addHill(int num, float height);
 
     std::vector<RoadSegment> segments_;

@@ -14,6 +14,10 @@ struct InputState {
     bool confirm = false;
     bool cancel = false;
     bool pause = false;
+
+    // Palanca de cambios secuencial (Modo individual arcade / shifter)
+    bool shiftUp = false;
+    bool shiftDown = false;
 };
 
 struct DrivingConfig {
@@ -25,7 +29,7 @@ struct DrivingConfig {
 
 class InputManager {
 public:
-    InputManager(DrivingConfig& config);
+    InputManager(DrivingConfig& config, int playerIndex = 0);
     ~InputManager();
 
     bool init();
@@ -33,24 +37,34 @@ public:
     void handleEvent(const SDL_Event& ev);
 
     void calibrate();
-    void setRumble(float lowFreq, float highFreq, Uint32 durationMs);
+    void setRumble(float lowFreq, float highFreq, Uint32 durationMs, bool priority = false);
+    bool isRumblePriorityActive() const;
     void setLED(Uint8 r, Uint8 g, Uint8 b);
 
     const InputState& getState() const { return state_; }
     bool hasController() const { return controller_ != nullptr; }
     bool hasGyro() const { return hasGyro_; }
+    int getPlayerIndex() const { return playerIndex_; }
+    bool hasArcadeShifter() const { return arcadeStick_ != nullptr; }
 
     void clearMenuFlags();
 
 private:
-    void openFirstController();
+    void openAssignedController();
     void closeController();
     float applyDeadzone(float val, float dz);
 
     DrivingConfig& config_;
+    int playerIndex_ = 0;
     SDL_GameController* controller_ = nullptr;
+    SDL_Joystick* arcadeStick_ = nullptr; // Placa Zero Delay / Arcade Shifter
     bool hasGyro_ = false;
     bool hasAccel_ = false;
+
+    // Estado previo de la palanca arcade para detección de flanco de subida/bajada y anti-rebote
+    int prevStickY_ = 0; 
+    float shiftCooldown_ = 0.0f;
+    bool arcadeUsesButtons_ = false;
 
     InputState state_;
 
@@ -65,4 +79,6 @@ private:
     bool keyUp_ = false;
     bool keyDown_ = false;
     bool keySpace_ = false;
+
+    Uint32 priorityRumbleEndTime_ = 0;
 };

@@ -13,6 +13,7 @@ public:
     void playScreech(bool active);
     void playCheckpoint();
     void playCrash();
+    void playShiftAlert();
 
 private:
     Mix_Chunk* generateTone(int durationMs, int freq, float decay, float volume, int type);
@@ -21,6 +22,7 @@ private:
     Mix_Chunk* sfxScreech_ = nullptr;
     Mix_Chunk* sfxCheckpoint_ = nullptr;
     Mix_Chunk* sfxCrash_ = nullptr;
+    Mix_Chunk* sfxShiftBeep_ = nullptr;
 
     int engineChannel_ = -1;
     int screechChannel_ = -1;

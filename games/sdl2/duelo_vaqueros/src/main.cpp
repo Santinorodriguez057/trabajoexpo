@@ -850,8 +850,8 @@ int main(int argc, char** argv) {
 
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1"); // Anti-aliasing para escalado
     Uint32 winFlags = snapshotMode ? SDL_WINDOW_HIDDEN : SDL_WINDOW_FULLSCREEN_DESKTOP;
-    int winW = snapshotMode ? 1920 : 800;
-    int winH = snapshotMode ? 1080 : 600;
+    int winW = 1920;
+    int winH = 1080;
     SDL_Window* win = SDL_CreateWindow("Duelo de Vaqueros", SDL_WINDOWPOS_CENTERED,
                                        SDL_WINDOWPOS_CENTERED, winW, winH, winFlags);
     SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
@@ -1638,17 +1638,15 @@ int main(int argc, char** argv) {
             renderText(ren, font, "DUELO DE VAQUEROS", 960, 60, {10, 10, 10, 255}, true, 1.2f);
 
             auto drawPlayerText = [&](Player& p, int cx, std::string label) {
-                if (!p.gc) return;
-                bool correctPose = isMatchingPose(p.accel, p.cal_down, 0.5f);
                 SDL_Color textColor = p.ready ? SDL_Color{50, 200, 50, 255} : SDL_Color{10, 10, 10, 255};
-                
                 renderText(ren, font, label, cx, 180, {10, 10, 10, 255}, true, 0.6f);
                 
                 std::string status = "APUNTA ABAJO";
                 if (p.ready) status = "LISTO";
-                else if (correctPose) status = "PULSA X";
+                else if (!p.gc) status = "PULSA [P] O [X]";
+                else if (isMatchingPose(p.accel, p.cal_down, 0.5f)) status = "PULSA X";
                 
-                drawBrutalistBox(cx - 140, 740, 280, 65, false);
+                drawBrutalistBox(cx - 150, 740, 300, 65, false);
                 renderText(ren, font, status, cx, 772, textColor, true, 0.45f);
             };
             
@@ -1837,7 +1835,7 @@ int main(int argc, char** argv) {
             }
 
             // Pie con instrucciones limpias
-            renderText(ren, font, "[X] Revancha   •   [O] Salir", 960, bannerY + 158, {90, 90, 90, 255}, true, 0.26f);
+            renderText(ren, font, "[X] o [P] Revancha   •   [O] o [ESC] Salir", 960, bannerY + 158, {90, 90, 90, 255}, true, 0.26f);
         }
 
         SDL_RenderPresent(ren);
