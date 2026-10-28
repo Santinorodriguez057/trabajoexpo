@@ -39,7 +39,7 @@ flowchart LR
 ├── games/
 │   ├── sdl2/                   # Juegos nativos en C++ / SDL2
 │   │   ├── duelo_vaqueros/     # Duelo Western 1v1 con reflejos y bullet-time
-│   │   ├── tiro_con_arco/      # Arquería en 1ª persona con apuntado por giroscopio
+│   │   ├── tiro_con_arco/      # Tiro al blanco de feria con apuntado por giroscopio
 │   │   ├── carrera_turbo/      # Conducción en 1ª persona con volante DualShock
 │   │   ├── test_mando/         # Herramienta de diagnóstico de ejes, giroscopio y vibración
 │   │   └── template_game/      # Plantilla base para añadir nuevos juegos
@@ -107,23 +107,23 @@ build\bin\menu.exe
 
 ## Juegos Incluidos y Controles
 
-### 1. Tiro con Arco (Arquería con Apuntado Físico DualShock)
-Simulador de tiro con arco en primera persona donde el jugador sostiene el mando frente a sí y apunta cambiando la orientación física del DualShock.
+### 1. Tiro al Blanco (Puesto de Feria con Apuntado Físico)
+Juego de puntería en primera persona ambientado en un puesto de feria neobrutalista. El jugador apunta con la orientación del DualShock y dispara a una fila de latas metálicas.
 
-* **Apuntado Físico por Sensores**: Fusión de giroscopio y acelerómetro con compensación de gravedad en tiempo real. Apuntar arriba/abajo y girar izquierda/derecha mueve la mira de forma natural como un arma real.
-* **Tensado Progresivo con R2**: Mantener presionado el gatillo analógico R2 para acumular tensión en el arco. Las palas y la cuerda se flexionan en pantalla mientras el mando emite resistencia háptica.
-* **Física Balística**: Al soltar R2, la flecha sale disparada con velocidad proporcional a la tensión y trayectoria parabólica afectada por la gravedad ($9.8\text{ m/s}^2$). En distancias lejanas se debe calcular la caída.
-* **Flechas Clavadas**: Las flechas quedan incrustadas en la diana en la posición y ángulo exactos del impacto.
-* **Sistema de 10 Zonas (FITA)**: Centro perfecto / X-Ring (+100 pts con fanfarria y doble vibración), Zona Dorada (+80), Roja (+60/+50), Azul (+40/+30), Negra (+20/+15) y Blanca (+10/+5).
-* **10 Rondas de Dificultad Creciente**: Distancias que van desde los 15 metros hasta los 70 metros con variaciones de altura y posición.
-* **Pantalla de Calibración en Vivo**: Muestra la telemetría en grados (Pitch, Yaw, Roll) y un recuadro con punto de mira en tiempo real. Presiona `[X]` para fijar el centro.
+* **Apuntado por sensores**: El giroscopio mueve la mira; el ratón sirve como alternativa. La mira se puede recentrar durante la partida.
+* **Disparo instantáneo**: Cada pulsación de R2 o clic izquierdo dispara una vez; no hace falta cargar ni soltar el gatillo.
+* **Cinco blancos derribables**: Latas grandes, separadas y numeradas. Sus formaciones, alturas, diseños y colores varían en cada ronda; cada acierto las hace caer.
+* **10 puestos**: Cinco disparos por puesto para derribar cinco latas; completar el puesto sin fallar otorga un bonus de 100 puntos.
+* **Pistola en primera persona**: Modelo low-poly con volumen, caras sombreadas, manos y detalles neobrutalistas; gira en horizontal y vertical con la mira y revela sus laterales al apuntar hacia los costados.
+* **Mira y arma sincronizadas**: La pistola acompaña el apuntado horizontal y verticalmente, y la mira vuelve al centro al cerrar cada ronda. La calibración toma como centro la postura cómoda actual del jugador.
+* **Reinicio accesible**: El menú de pausa permite volver a la ronda 1 y reiniciar la puntuación de la partida.
+* **Estética de feria neobrutalista**: Marquesina a rayas, bombillas, paneles de color, contornos negros y sombras marcadas.
 * **Récord Persistente**: Guarda la puntuación máxima en disco y avisa al superar el récord.
 
 | Acción | Mando DualShock 4 | Teclado / Ratón |
 |---|---|---|
 | **Apuntar** | Orientación física del mando | Movimiento del ratón |
-| **Tensar Arco** | Mantener **Gatillo R2** (progresivo) | Mantener **Clic Izquierdo** o **Espacio** |
-| **Disparar** | Soltar **Gatillo R2** | Soltar **Clic Izquierdo** o **Espacio** |
+| **Disparar** | Pulsar **Gatillo R2** | Clic izquierdo |
 | **Recalibrar / Centrar** | Botón **Triángulo [△]** o **L1** | Tecla **[C]** o **[R]** |
 | **Ajuste Auxiliar** | **Stick Derecho** | — |
 | **Menú de Pausa / Configuración** | Botón **Options / Start** | Tecla **[ESC]** |

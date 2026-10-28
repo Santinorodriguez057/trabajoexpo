@@ -60,15 +60,10 @@ void InputManager::calibrate() {
     targetAimY_ = 0.0f;
     state_.x = 0.0f;
     state_.y = 0.0f;
-    drawAnchorAimX_ = 0.0f;
-    drawAnchorAimY_ = 0.0f;
     postShotFreezeTimer_ = 0.0f;
+    filteredTurnRate_ = 0.0f;
+    filteredPitchRate_ = 0.0f;
     state_.calibrated = true;
-
-    // Valores de referencia del giroscopio del mando en reposo
-    const float kBenchBiasX = 0.007580f;
-    const float kBenchBiasY = -0.012994f;
-    const float kBenchBiasZ = -0.002166f;
 
     if (controller_ && hasGyro_) {
         float sumX = 0.0f, sumY = 0.0f, sumZ = 0.0f;
@@ -85,24 +80,29 @@ void InputManager::calibrate() {
             minZ = std::min(minZ, g[2]); maxZ = std::max(maxZ, g[2]);
             SDL_Delay(2);
         }
-        // Solo actualizar el sesgo de hardware si el mando está perfectamente inmóvil sobre una mesa
-        if ((maxX - minX < 0.007f) && (maxY - minY < 0.007f) && (maxZ - minZ < 0.007f)) {
+        // Centrar funciona en cualquier postura. Solo aprender un nuevo sesgo
+        // cuando el mando está quieto; si se mueve, conservar el último valor bueno.
+        if ((maxX - minX < 0.0035f) && (maxY - minY < 0.0035f) && (maxZ - minZ < 0.0035f)) {
             gyroBiasX_ = sumX / kSamples;
             gyroBiasY_ = sumY / kSamples;
             gyroBiasZ_ = sumZ / kSamples;
-        } else {
-            gyroBiasX_ = kBenchBiasX;
-            gyroBiasY_ = kBenchBiasY;
-            gyroBiasZ_ = kBenchBiasZ;
         }
-    } else {
-        gyroBiasX_ = kBenchBiasX;
-        gyroBiasY_ = kBenchBiasY;
-        gyroBiasZ_ = kBenchBiasZ;
     }
 
     // Feedback táctil de recentrado
     setRumble(0.20f, 0.40f, 140);
+}
+
+void InputManager::recenterAim() {
+    targetAimX_ = 0.0f;
+    targetAimY_ = 0.0f;
+    state_.x = 0.0f;
+    state_.y = 0.0f;
+    filteredTurnRate_ = 0.0f;
+    filteredPitchRate_ = 0.0f;
+    postShotFreezeTimer_ = 0.12f;
+    rumbleSuppressTimer_ = std::max(rumbleSuppressTimer_, 0.12f);
+    state_.calibrated = true;
 }
 
 float InputManager::applyDeadzone(float value, float deadzone) {
@@ -116,7 +116,10 @@ void InputManager::setRumble(float lowFreq, float highFreq, Uint32 durationMs) {
     if (!config_.rumbleEnabled || !controller_) return;
     Uint16 low = static_cast<Uint16>(std::clamp(lowFreq, 0.0f, 1.0f) * 65535.0f);
     Uint16 high = static_cast<Uint16>(std::clamp(highFreq, 0.0f, 1.0f) * 65535.0f);
-    SDL_GameControllerRumble(controller_, low, high, durationMs);
+    if (SDL_GameControllerRumble(controller_, low, high, durationMs) == 0) {
+        // El motor transmite vibración al giroscopio; ignorar ese rebote en la mira.
+        rumbleSuppressTimer_ = std::max(rumbleSuppressTimer_, durationMs / 1000.0f + 0.06f);
+    }
 }
 
 void InputManager::setLED(Uint8 r, Uint8 g, Uint8 b) {
@@ -174,14 +177,16 @@ void InputManager::handleEvent(const SDL_Event& ev) {
 }
 
 void InputManager::update(float dt) {
-    if (dt > 0.05f) dt = 0.05f;
+    dt = std::clamp(dt, 0.0f, 0.05f);
+
+    rumbleSuppressTimer_ = std::max(0.0f, rumbleSuppressTimer_ - dt);
 
     // Temporizador de congelamiento para absorber el rebote mecánico del gatillo al soltar
     if (postShotFreezeTimer_ > 0.0f) {
         postShotFreezeTimer_ = std::max(0.0f, postShotFreezeTimer_ - dt);
     }
 
-    // 1. Procesamiento previo del gatillo R2
+    // Disparo instantáneo: el flanco de presión del R2 o del clic consume un tiro.
     float triggerVal = 0.0f;
     if (controller_) {
         Sint16 rawTrigger = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
@@ -190,52 +195,17 @@ void InputManager::update(float dt) {
         }
     }
 
-    if (mouseHeld_) {
-        mouseTension_ = std::min(1.0f, mouseTension_ + dt * 2.0f);
-        triggerVal = std::max(triggerVal, mouseTension_);
-    } else {
-        mouseTension_ = 0.0f;
-    }
+    if (mouseHeld_) triggerVal = 1.0f;
 
-    bool wasDrawing = state_.isDrawing;
-
-    if (triggerVal > 0.08f) {
-        if (!wasDrawing) {
-            // Anclar punto de mira de inicio de tensado
-            drawAnchorAimX_ = targetAimX_;
-            drawAnchorAimY_ = targetAimY_;
-        }
-        state_.isDrawing = true;
-        if (currentTension_ < triggerVal) {
-            currentTension_ = std::min(triggerVal, currentTension_ + dt * 3.0f);
-        } else {
-            currentTension_ = triggerVal;
-        }
-        state_.tension = std::clamp(currentTension_, 0.0f, 1.0f);
-
-        // LED progresivo de tensión (Oro -> Ámbar -> Carmesí)
-        Uint8 ledR = static_cast<Uint8>(std::min(255.0f, 60.0f + state_.tension * 195.0f));
-        Uint8 ledG = static_cast<Uint8>(std::max(0.0f, 200.0f - state_.tension * 160.0f));
-        Uint8 ledB = 10;
-        setLED(ledR, ledG, ledB);
-
-    } else {
-        if (wasDrawing) {
-            if (currentTension_ >= 0.15f) {
-                state_.justFired = true;
-                state_.releaseTension = currentTension_;
-                // Congelar la integración giroscópica 180ms para ignorar el coletazo del dedo al soltar
-                postShotFreezeTimer_ = 0.18f;
-                setLED(255, 230, 100);
-            } else {
-                setLED(20, 180, 220);
-            }
-        } else {
-            state_.justFired = false;
-        }
-        state_.isDrawing = false;
-        currentTension_ = 0.0f;
-        state_.tension = 0.0f;
+    bool wasDrawing = state_.triggerHeld;
+    bool triggerDown = triggerVal > 0.18f;
+    state_.triggerHeld = triggerDown;
+    state_.justFired = triggerDown && !wasDrawing;
+    if (state_.justFired) {
+        postShotFreezeTimer_ = 0.10f;
+        setLED(255, 210, 60);
+    } else if (!triggerDown && wasDrawing) {
+        setLED(20, 180, 220);
     }
 
     // 2. Apuntado con sensores del DualShock 4
@@ -248,46 +218,50 @@ void InputManager::update(float dt) {
         float gy = gyro[1] - gyroBiasY_;
         float gz = gyro[2] - gyroBiasZ_;
 
+        // Aprendizaje lento del cero cuando el mando casi no se mueve evita
+        // que un pequeño sesgo del giroscopio haga derivar la mira con el tiempo.
+        if (!state_.triggerHeld && postShotFreezeTimer_ <= 0.0f && rumbleSuppressTimer_ <= 0.0f &&
+            std::abs(gx) < 0.055f && std::abs(gy) < 0.055f && std::abs(gz) < 0.055f) {
+            const float biasAlpha = std::min(1.0f, dt * 0.12f);
+            gyroBiasX_ += gx * biasAlpha;
+            gyroBiasY_ += gy * biasAlpha;
+            gyroBiasZ_ += gz * biasAlpha;
+            gx = gyro[0] - gyroBiasX_;
+            gy = gyro[1] - gyroBiasY_;
+            gz = gyro[2] - gyroBiasZ_;
+        }
+
         // Si estamos en la ventana de absorción post-disparo, no integrar movimiento espurio
-        if (postShotFreezeTimer_ > 0.0f) {
+        if (postShotFreezeTimer_ > 0.0f || rumbleSuppressTimer_ > 0.0f) {
             gx = 0.0f;
             gy = 0.0f;
             gz = 0.0f;
         }
 
         // DualShock 4:
-        // Al tensar con el dedo índice en R2, la mano aplica un par de torsión natural (roll/gz).
-        // Al tensar el arco se desacopla gz por completo para que presionar R2 no tire la mira a un costado.
-        float rollWeight = state_.isDrawing ? 0.0f : 0.25f;
+        // Al apretar R2 la mano aplica torsión; durante el disparo reducimos el eje de roll.
+        float rollWeight = state_.triggerHeld ? 0.0f : 0.25f;
         float turnRate = -gy - rollWeight * gz;
         float pitchRate = -gx;
 
-        if (config_.invertY) pitchRate = -pitchRate;
+        // Filtro pasa-bajos: atenúa la vibración mecánica del mando sin perder el apuntado.
+        const float filterTime = state_.triggerHeld ? 0.14f : 0.055f;
+        const float filterAlpha = dt > 0.0f ? dt / (filterTime + dt) : 0.0f;
+        filteredTurnRate_ += (turnRate - filteredTurnRate_) * filterAlpha;
+        filteredPitchRate_ += (pitchRate - filteredPitchRate_) * filterAlpha;
 
-        // Amortiguación de apuntado al tensar (Steady Aim / Modo Foco):
-        // Al tensar mucho el arco, la mira se estabiliza fuertemente (hasta un 86% de reducción a 100% tensión)
-        // permitiendo afinar el tiro con micro-movimientos sin que la mira tiemble o se dispare.
-        float tensionDamping = 1.0f / (1.0f + state_.tension * state_.tension * 6.0f);
-        float effectiveDeadzone = config_.deadzone * (1.0f + state_.tension * 2.8f);
+        float effectiveDeadzone = std::max(config_.deadzone, 0.025f);
 
-        float filteredTurn = applyDeadzone(turnRate, effectiveDeadzone);
-        float filteredPitch = applyDeadzone(pitchRate, effectiveDeadzone);
+        float filteredTurn = applyDeadzone(filteredTurnRate_, effectiveDeadzone);
+        float pitchForAim = config_.invertY ? -filteredPitchRate_ : filteredPitchRate_;
+        float filteredPitch = applyDeadzone(pitchForAim, effectiveDeadzone);
 
         // Integración de velocidad angular con amortiguación
-        float moveX = filteredTurn * config_.sensitivityX * dt * 2.0f * tensionDamping;
-        float moveY = filteredPitch * config_.sensitivityY * dt * 2.0f * tensionDamping;
+        float moveX = filteredTurn * config_.sensitivityX * dt * 2.0f;
+        float moveY = filteredPitch * config_.sensitivityY * dt * 2.0f;
 
         targetAimX_ += moveX;
         targetAimY_ += moveY;
-
-        // Si se está tensando el arco, delimitar la deriva alrededor del punto de inicio del tensado
-        // Esto garantiza que por más que se apriete fuerte R2, la mira no puede irse fuera del rango de diana
-        if (state_.isDrawing) {
-            float maxDevX = 0.15f;
-            float maxDevY = 0.11f;
-            targetAimX_ = std::clamp(targetAimX_, drawAnchorAimX_ - maxDevX, drawAnchorAimX_ + maxDevX);
-            targetAimY_ = std::clamp(targetAimY_, drawAnchorAimY_ - maxDevY, drawAnchorAimY_ + maxDevY);
-        }
 
         // Limitar dentro del campo visual
         targetAimX_ = std::clamp(targetAimX_, -1.15f, 1.15f);
@@ -297,15 +271,16 @@ void InputManager::update(float dt) {
         Sint16 rx = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_RIGHTX);
         Sint16 ry = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_RIGHTY);
         if (std::abs(rx) > 3500) {
-            targetAimX_ += (rx / 32767.0f) * config_.sensitivityX * dt * 1.5f * tensionDamping;
+            targetAimX_ += (rx / 32767.0f) * config_.sensitivityX * dt * 1.5f;
             targetAimX_ = std::clamp(targetAimX_, -1.15f, 1.15f);
         }
         if (std::abs(ry) > 3500) {
             float stickY = (ry / 32767.0f);
             if (config_.invertY) stickY = -stickY;
-            targetAimY_ += stickY * config_.sensitivityY * dt * 1.5f * tensionDamping;
+            targetAimY_ += stickY * config_.sensitivityY * dt * 1.5f;
             targetAimY_ = std::clamp(targetAimY_, -0.90f, 0.90f);
         }
+
     }
 
     // 3. Filtro de suavizado (Smooth Interpolation)

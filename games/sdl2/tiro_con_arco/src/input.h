@@ -6,10 +6,8 @@
 struct AimState {
     float x = 0.0f;      // -1.0 a +1.0 (pantalla horizontal)
     float y = 0.0f;      // -1.0 a +1.0 (pantalla vertical)
-    float tension = 0.0f;// 0.0 a 1.0 (tension del arco)
-    bool isDrawing = false;
+    bool triggerHeld = false;
     bool justFired = false;
-    float releaseTension = 0.0f;
     bool calibrated = false;
 };
 
@@ -23,6 +21,7 @@ public:
     void handleEvent(const SDL_Event& ev);
 
     void calibrate();
+    void recenterAim();
     void setRumble(float lowFreq, float highFreq, Uint32 durationMs);
     void setLED(Uint8 r, Uint8 g, Uint8 b);
 
@@ -68,13 +67,17 @@ private:
     float gyroBiasY_ = 0.0f;
     float gyroBiasZ_ = 0.0f;
 
-    // Estado del gatillo R2
-    float currentTension_ = 0.0f;
-    float drawAnchorAimX_ = 0.0f;
-    float drawAnchorAimY_ = 0.0f;
+    // Sesgo de reposo del giroscopio, estimado durante la calibración.
+    float gyroBiasX_ = 0.0f;
+    float gyroBiasY_ = 0.0f;
+    float gyroBiasZ_ = 0.0f;
+
+    // Estado del gatillo y ventana de absorción de vibración al disparar.
     float postShotFreezeTimer_ = 0.0f;
+    float rumbleSuppressTimer_ = 0.0f;
+    float filteredTurnRate_ = 0.0f;
+    float filteredPitchRate_ = 0.0f;
     bool mouseHeld_ = false;
-    float mouseTension_ = 0.0f;
 
     // Flags de interfaz
     bool pausePressed_ = false;
