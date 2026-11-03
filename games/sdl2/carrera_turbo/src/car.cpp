@@ -137,10 +137,11 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
             else if (gear_ == 4) newGearMax = 205.0f;
             else if (gear_ == 5) newGearMax = 245.0f;
 
-            if (speed_ > newGearMax * 1.15f) { // Bajó marcha pasado un 15% del corte
+            // Detección más sensible de mal cambio: si baja cuando ya va por encima de la velocidad tope de esa marcha
+            if (speed_ > newGearMax * 1.02f) {
                 engineOverheat_ = 1.0f;
-                coolTapsRemaining_ = 6; // Debe pulsar 6 veces el botón X6 para enfriar y purgar
-                wrongShiftAlarmTimer_ = 3.5f;
+                coolTapsRemaining_ = 5; // Requiere 5 toques al botón X6
+                wrongShiftAlarmTimer_ = 5.0f;
                 pitch_ -= 14.0f; // Bloqueo violento de caja
             }
         }
