@@ -12,7 +12,9 @@ enum class PropType {
     FINISH_LINE_ARCH,
     LAMPPOST,
     ROCK,
-    GRANDSTAND
+    GRANDSTAND,
+    NITRO_BOTTLE,
+    MUD_PUDDLE
 };
 
 struct RoadProp {
@@ -62,6 +64,7 @@ public:
     int getSegmentCount() const { return static_cast<int>(segments_.size()); }
     float getTrackLength() const { return trackLength_; }
     const std::vector<RoadSegment>& getSegments() const { return segments_; }
+    std::vector<RoadSegment>& getSegments() { return segments_; }
 
     const std::vector<TrafficCar>& getTraffic() const { return traffic_; }
     std::vector<TrafficCar>& getTraffic() { return traffic_; }

@@ -15,6 +15,10 @@ public:
     void playCrash();
     void playShiftAlert();
     void playCountdownBeep(bool isGo = false);
+    void playNitro();
+    void playWiper();
+    void playEngineAlarm();
+    void playEngineCoolTap();
 
 private:
     Mix_Chunk* generateTone(int durationMs, int freq, float decay, float volume, int type);
@@ -24,6 +28,10 @@ private:
     Mix_Chunk* sfxCheckpoint_ = nullptr;
     Mix_Chunk* sfxCrash_ = nullptr;
     Mix_Chunk* sfxShiftBeep_ = nullptr;
+    Mix_Chunk* sfxNitro_ = nullptr;
+    Mix_Chunk* sfxWiper_ = nullptr;
+    Mix_Chunk* sfxAlarm_ = nullptr;
+    Mix_Chunk* sfxCool_ = nullptr;
 
     int engineChannel_ = -1;
     int screechChannel_ = -1;

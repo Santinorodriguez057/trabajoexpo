@@ -908,6 +908,43 @@ void Renderer::renderProp(const RoadProp& prop, int screenX, int screenY, float 
         if (archW > 200) {
             drawText(fontTitle_, "START / FINISH", screenX, bannerY + archH / 2 - 14, {250, 204, 21, 255}, true);
         }
+
+    } else if (prop.type == PropType::NITRO_BOTTLE) {
+        // Botella cilíndrica de óxido nitroso flotando y girando sobre la pista
+        if (roadScreenW < 6.0f) return;
+        int botW = std::clamp(static_cast<int>(roadScreenW * 0.08f), 8, 70);
+        int botH = std::clamp(static_cast<int>(roadScreenW * 0.16f), 16, 140);
+        float hover = std::sin(raceTime * 6.0f + segIndex) * (botH * 0.15f);
+        int by = screenY - botH - static_cast<int>(hover);
+
+        // Halo brillante cian / azul eléctrico
+        drawNeobrutalCircle(screenX, by + botH / 2, botW, {56, 189, 248, 80}, 0, 0);
+
+        // Cuerpo de la botella (azul deportivo NOS)
+        drawNeobrutalRect(screenX - botW / 2, by + botH / 4, botW, (botH * 3) / 4, {14, 165, 233, 255}, 2, 3);
+        // Válvula / boquilla superior plateada
+        drawNeobrutalRect(screenX - botW / 4, by, botW / 2, botH / 4, {226, 232, 240, 255}, 2, 0);
+        // Etiqueta "NOS" o "N2O"
+        drawNeobrutalRect(screenX - botW / 2 + 2, by + botH / 2, botW - 4, botH / 4, {250, 204, 21, 255}, 1, 0);
+        if (botW > 24) {
+            drawText(fontSmall_, "N2O", screenX, by + botH / 2 - 2, {18, 18, 18, 255}, true);
+        }
+
+    } else if (prop.type == PropType::MUD_PUDDLE) {
+        // Charco de barro sobre el asfalto (elipse oscura marrón con salpicaduras)
+        if (roadScreenW < 8.0f) return;
+        int mudW = std::clamp(static_cast<int>(roadScreenW * 0.22f), 14, 260);
+        int mudH = std::clamp(static_cast<int>(roadScreenW * 0.05f), 4, 60);
+
+        // Charco plano en perspectiva
+        renderPolygon(screenX - mudW / 2, screenY,
+                      screenX - mudW / 4, screenY - mudH,
+                      screenX + mudW / 4, screenY - mudH,
+                      screenX + mudW / 2, screenY,
+                      {92, 51, 23, 230});
+        // Borde exterior húmedo
+        renderThickLine(screenX - mudW / 2, screenY, screenX + mudW / 2, screenY, 3.0f, {65, 34, 15, 255});
+        renderThickLine(screenX - mudW / 4, screenY - mudH, screenX + mudW / 4, screenY - mudH, 2.0f, {120, 68, 32, 255});
     }
 }
 
@@ -1893,6 +1930,108 @@ void Renderer::renderCockpit(const Car& car, const Road& road, float raceTime, i
             drawNeobrutalCircle(fx, fy, 8, gloveLeather, 2, 0);
         }
         drawNeobrutalCircle(curHandRX + static_cast<int>(perpRX * 10.0f), curHandRY + static_cast<int>(perpRY * 10.0f), 8, gloveLeather, 2, 0);
+    }
+
+    // =========================================================================
+    // EFECTOS VISUALES DE MECÁNICAS DE CABINA (1P Y 2P):
+    // 1. MANCHAS DE BARRO EN EL PARABRISAS
+    // 2. ESCOBILLAS LIMPIAPARABRISAS ACTIVAS
+    // 3. EFECTO TÚNEL / FUEGO TURBO DE NITRO
+    // 4. HUMO Y ALERTA DE MOTOR ROTO / SOBRECALENTADO
+    // =========================================================================
+    float mud = car.getMudSplatter();
+    if (mud > 0.01f) {
+        SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+        // Salpicaduras de barro marrón translúcido sobre el parabrisas
+        Uint8 alpha = static_cast<Uint8>(std::clamp(mud * 230.0f, 20.0f, 240.0f));
+        SDL_Color mudCol = {78, 42, 18, alpha};
+
+        // Gotas y manchones con distribución procedural fija
+        const int sX[14] = {420, 680, 950, 1180, 1420, 560, 810, 1080, 1340, 720, 980, 860, 510, 1260};
+        const int sY[14] = {280, 220, 310, 240, 330, 420, 380, 440, 390, 490, 510, 260, 360, 470};
+        const int sR[14] = {45, 65, 80, 55, 70, 50, 90, 60, 75, 85, 95, 40, 58, 62};
+
+        int activeDrops = static_cast<int>(mud * 14.0f) + 1;
+        for (int d = 0; d < activeDrops && d < 14; ++d) {
+            int r = static_cast<int>(sR[d] * (0.6f + mud * 0.4f));
+            drawNeobrutalCircle(sX[d], sY[d], r, mudCol, 0, 0);
+            drawNeobrutalCircle(sX[d] + r / 4, sY[d] + r / 4, r / 2, {105, 58, 25, static_cast<Uint8>(alpha / 2)}, 0, 0);
+        }
+        SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
+    }
+
+    // Animación de los limpiaparabrisas barriendo el cristal
+    if (car.isWiperActive()) {
+        float prog = car.getWiperProgress(); // 0 a 1
+        float sweepAngle = std::sin(prog * 3.14159265f) * 78.0f; // Sube hasta 78 grados y vuelve
+        float sweepRad = sweepAngle * 0.0174532925f;
+
+        int p1BaseX = isSplitScreen ? 560 : 520;
+        int p1BaseY = isSplitScreen ? 349 : 642;
+        int p2BaseX = isSplitScreen ? 970 : 980;
+        int p2BaseY = isSplitScreen ? 349 : 642;
+        int wiperLen = isSplitScreen ? 340 : 490;
+
+        float tip1X = p1BaseX + std::cos(-sweepRad - 0.2f) * wiperLen;
+        float tip1Y = p1BaseY - std::sin(sweepRad + 0.2f) * wiperLen;
+        float tip2X = p2BaseX + std::cos(-sweepRad - 0.2f) * wiperLen;
+        float tip2Y = p2BaseY - std::sin(sweepRad + 0.2f) * wiperLen;
+
+        renderThickLine(p1BaseX, p1BaseY, tip1X, tip1Y, 6.0f, {24, 26, 32, 255});
+        renderThickLine(p2BaseX, p2BaseY, tip2X, tip2Y, 6.0f, {24, 26, 32, 255});
+        drawNeobrutalCircle(p1BaseX, p1BaseY, 7, {18, 18, 18, 255}, 2, 0);
+        drawNeobrutalCircle(p2BaseX, p2BaseY, 7, {18, 18, 18, 255}, 2, 0);
+    }
+
+    // Efecto Nitro activo (túnel de velocidad cian en los bordes de visión)
+    if (car.isNitroActive()) {
+        SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+        float pulse = std::sin(raceTime * 24.0f) * 0.5f + 0.5f;
+        SDL_Color nitroEdge = {14, 165, 233, static_cast<Uint8>(70 + pulse * 60)};
+        // Líneas de velocidad cian proyectadas en el parabrisas
+        for (int i = 0; i < 18; ++i) {
+            float angle = (i / 18.0f) * 6.28318f;
+            float rInner = 280.0f + pulse * 40.0f;
+            float rOuter = 820.0f;
+            int cx = viewW / 2;
+            int cy = viewH / 2 - 40;
+            renderThickLine(cx + std::cos(angle) * rInner, cy + std::sin(angle) * rInner,
+                            cx + std::cos(angle) * rOuter, cy + std::sin(angle) * rOuter,
+                            3.5f, nitroEdge);
+        }
+        SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
+    }
+
+    // Alerta y humo si el motor está roto / sobrecalentado
+    if (car.isEngineBlown() || car.hasWrongDownshiftAlarm()) {
+        // Humo blanco/gris que sale del capó por el parabrisas
+        SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+        for (int p = 0; p < 8; ++p) {
+            float phase = std::fmod(raceTime * 5.0f + p * 0.4f, 1.0f);
+            int puffX = 960 + static_cast<int>(std::sin(phase * 6.28f + p) * 140.0f);
+            int puffY = 620 - static_cast<int>(phase * 340.0f);
+            int puffR = 30 + static_cast<int>(phase * 70.0f);
+            Uint8 puffAlpha = static_cast<Uint8>((1.0f - phase) * 120.0f);
+            drawNeobrutalCircle(puffX, puffY, puffR, {220, 225, 235, puffAlpha}, 0, 0);
+        }
+        SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
+
+        // Cartel gigante de alarma en el centro del parabrisas
+        int bannerW = 680;
+        int bannerH = 75;
+        int by = viewH / 2 - 140;
+        bool flash = (static_cast<int>(raceTime * 8.0f) % 2 == 0);
+        SDL_Color alertCol = flash ? SDL_Color{239, 68, 68, 255} : SDL_Color{250, 204, 21, 255};
+        drawNeobrutalRect(viewW / 2 - bannerW / 2, by, bannerW, bannerH, alertCol, 4, 6);
+        drawText(fontTitle_, "! SOBRERRÉGIMEN - MOTOR ROTO !", viewW / 2, by + 12, {18, 18, 18, 255}, true);
+
+        // Subtítulo con indicación de pulsar el botón X6
+        int subW = 540;
+        int subH = 42;
+        drawNeobrutalRect(viewW / 2 - subW / 2, by + bannerH + 8, subW, subH, {18, 18, 18, 240}, 2, 4);
+        char coolBuf[96];
+        std::snprintf(coolBuf, sizeof(coolBuf), "PULSA BOTÓN [X6] REPETIDAMENTE (%d RESTANTES)", car.getCoolEngineTapsNeeded());
+        drawText(fontSmall_, coolBuf, viewW / 2, by + bannerH + 18, {254, 240, 138, 255}, true);
     }
 }
 

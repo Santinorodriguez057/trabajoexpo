@@ -48,6 +48,27 @@ public:
     float getThrottleInput() const { return lastThrottle_; }
     float getBrakeInput() const { return lastBrake_; }
 
+    // Mecánicas de Cabina e Inventario
+    int getNitroInventory() const { return nitroInventory_; }
+    void addNitroBottle() { nitroInventory_ = std::min(nitroInventory_ + 1, 3); }
+    bool isNitroActive() const { return nitroTimer_ > 0.0f; }
+    float getNitroTimer() const { return nitroTimer_; }
+
+    float getMudSplatter() const { return mudSplatter_; }
+    void addMudSplatter(float amount) { mudSplatter_ = std::clamp(mudSplatter_ + amount, 0.0f, 1.0f); }
+    void clearMud(float amount) { mudSplatter_ = std::max(0.0f, mudSplatter_ - amount); }
+    float getWiperProgress() const { return wiperProgress_; }
+    bool isWiperActive() const { return wiperActive_; }
+
+    bool isEngineBlown() const { return engineOverheat_ >= 1.0f; }
+    float getEngineOverheat() const { return engineOverheat_; }
+    int getCoolEngineTapsNeeded() const { return coolTapsRemaining_; }
+    bool hasWrongDownshiftAlarm() const { return wrongShiftAlarmTimer_ > 0.0f; }
+
+    void triggerNitro();
+    void triggerWiper();
+    void tapCoolEngine();
+
     void setInitialPosition(float x, float z) { x_ = x; trackZ_ = z; latVel_ = 0.0f; }
     void bumpX(float deltaX) { x_ = std::clamp(x_ + deltaX, -0.95f, 0.95f); }
     void addDistance(float delta) { trackZ_ += delta; }
@@ -74,4 +95,16 @@ private:
     float shiftAnim_ = 0.0f;    // Animación de la mano en la palanca de cambios (0 a 1)
     float lastThrottle_ = 0.0f;
     float lastBrake_ = 0.0f;
+
+    // Estado interno de las 3 mecánicas nuevas
+    int nitroInventory_ = 1;       // Empieza con 1 botella de nitro de cortesía
+    float nitroTimer_ = 0.0f;      // Segundos restantes de boost
+
+    float mudSplatter_ = 0.0f;     // Suciedad en parabrisas (0.0 a 1.0)
+    bool wiperActive_ = false;
+    float wiperProgress_ = 0.0f;   // 0.0 a 1.0 ciclo de limpiaparabrisas
+
+    float engineOverheat_ = 0.0f;  // 0.0 normal, 1.0 motor roto / sobrecalentado
+    int coolTapsRemaining_ = 0;    // Toques que faltan al botón X6 para enfriar
+    float wrongShiftAlarmTimer_ = 0.0f;
 };

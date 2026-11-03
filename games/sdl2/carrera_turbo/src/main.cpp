@@ -318,6 +318,39 @@ int main(int argc, char** argv) {
 
                     float trackLength = road.getTrackLength();
 
+                    // GESTIÓN DE ENTRADAS DE LAS 3 MECÁNICAS NUEVAS (Fight Stick X0, X3, X6 o Teclado N, X, F):
+                    if (in1.nitroTrigger) {
+                        if (car1.getNitroInventory() > 0 && !car1.isNitroActive()) {
+                            car1.triggerNitro();
+                            sound.playNitro();
+                            input1.setRumble(0.8f, 0.9f, 400);
+                            input1.setLED(14, 165, 233); // Celeste eléctrico Nitro
+                        }
+                    }
+                    if (in1.wiperTrigger) {
+                        car1.triggerWiper();
+                        sound.playWiper();
+                    }
+                    if (in1.coolEngineTap) {
+                        if (car1.getCoolEngineTapsNeeded() > 0) {
+                            car1.tapCoolEngine();
+                            sound.playEngineCoolTap();
+                            input1.setRumble(0.4f, 0.6f, 100);
+                        }
+                    }
+
+                    // Sonido y LED de alarma cuando el motor está roto
+                    if (car1.isEngineBlown()) {
+                        static float alarmSoundTimer = 0.0f;
+                        alarmSoundTimer -= dt;
+                        if (alarmSoundTimer <= 0.0f) {
+                            sound.playEngineAlarm();
+                            alarmSoundTimer = 0.5f;
+                            input1.setLED(239, 68, 68);
+                            input1.setRumble(0.7f, 0.4f, 200);
+                        }
+                    }
+
                     if (!isSplitScreen) {
                         // =========================================================================
                         // LÓGICA DE VUELTA RÁPIDA / TIME ATTACK (1P)
@@ -516,6 +549,30 @@ int main(int argc, char** argv) {
                                 tCar.speed = std::max(60.0f, tCar.speed + 30.0f);
                                 tCar.z += 12.0f;
                                 collisionCooldown2 = 0.8f;
+                            }
+                        }
+                    }
+
+                    // INTERACCIÓN DE P1 CON PROPS INTERACTIVOS EN LA PISTA (Botellas de Nitro y Charcos de Barro):
+                    int segIdx = static_cast<int>(std::floor(car1.getTrackZ() / Road::kSegmentLength)) % road.getSegmentCount();
+                    if (segIdx >= 0 && segIdx < road.getSegmentCount()) {
+                        auto& seg = road.getSegments()[segIdx];
+                        for (auto it = seg.props.begin(); it != seg.props.end(); ) {
+                            if (it->type == PropType::NITRO_BOTTLE && std::abs(it->offset - car1.getX()) < 0.55f) {
+                                // Agarrar botella de nitro
+                                car1.addNitroBottle();
+                                sound.playCheckpoint();
+                                input1.setLED(14, 165, 233);
+                                input1.setRumble(0.5f, 0.5f, 150);
+                                it = seg.props.erase(it); // Se recoge la botella
+                            } else if (it->type == PropType::MUD_PUDDLE && std::abs(it->offset - car1.getX()) < 0.65f) {
+                                // Pisar charco de barro -> salpicadura en parabrisas y pérdida ligera de agarre
+                                car1.addMudSplatter(0.40f);
+                                input1.setRumble(0.4f, 0.7f, 180);
+                                sound.playCrash();
+                                ++it;
+                            } else {
+                                ++it;
                             }
                         }
                     }

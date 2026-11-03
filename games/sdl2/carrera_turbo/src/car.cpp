@@ -24,6 +24,39 @@ void Car::reset() {
     shiftAnim_ = 0.0f;
     lastThrottle_ = 0.0f;
     lastBrake_ = 0.0f;
+    nitroInventory_ = 1;
+    nitroTimer_ = 0.0f;
+    mudSplatter_ = 0.0f;
+    wiperActive_ = false;
+    wiperProgress_ = 0.0f;
+    engineOverheat_ = 0.0f;
+    coolTapsRemaining_ = 0;
+    wrongShiftAlarmTimer_ = 0.0f;
+}
+
+void Car::triggerNitro() {
+    if (nitroInventory_ > 0 && nitroTimer_ <= 0.0f) {
+        nitroInventory_--;
+        nitroTimer_ = 3.5f; // 3.5 segundos de empuje bestial
+        pitch_ += 6.0f;     // Tirón hacia atrás al acelerar
+    }
+}
+
+void Car::triggerWiper() {
+    wiperActive_ = true;
+    wiperProgress_ = 0.0f;
+}
+
+void Car::tapCoolEngine() {
+    if (coolTapsRemaining_ > 0) {
+        coolTapsRemaining_--;
+        if (coolTapsRemaining_ <= 0) {
+            engineOverheat_ = 0.0f; // Motor completamente enfriado y recuperado
+            wrongShiftAlarmTimer_ = 0.0f;
+        } else {
+            engineOverheat_ = std::max(0.0f, engineOverheat_ - 0.20f);
+        }
+    }
 }
 
 void Car::hitObstacle() {
@@ -93,6 +126,24 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
     if (gear_ != prevGear) {
         shiftAnim_ = 1.0f; // Animación de mano en palanca y desacople de embrague en cabina
         pitch_ -= (gear_ > prevGear) ? 6.0f : -3.5f;
+
+        // Si bajó de marcha a una velocidad excesiva para la nueva marcha (ej: bajar a 1ª o 2ª a más de su corte físico)
+        // se produce SOBRERRÉGIMEN / MOTOR ROTO:
+        if (gear_ < prevGear && gear_ > 0) {
+            float newGearMax = 60.0f;
+            if (gear_ == 1) newGearMax = 58.0f;
+            else if (gear_ == 2) newGearMax = 105.0f;
+            else if (gear_ == 3) newGearMax = 155.0f;
+            else if (gear_ == 4) newGearMax = 205.0f;
+            else if (gear_ == 5) newGearMax = 245.0f;
+
+            if (speed_ > newGearMax * 1.15f) { // Bajó marcha pasado un 15% del corte
+                engineOverheat_ = 1.0f;
+                coolTapsRemaining_ = 6; // Debe pulsar 6 veces el botón X6 para enfriar y purgar
+                wrongShiftAlarmTimer_ = 3.5f;
+                pitch_ -= 14.0f; // Bloqueo violento de caja
+            }
+        }
 
         // Pérdida realista de velocidad por desacople de embrague durante el cambio:
         // En un cambio normal se pierden entre 5 y 15 km/h según la velocidad y marcha
@@ -230,6 +281,16 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
 
         driveForce = (engineTorque * input.throttle) * (totalRatio * baseMultiplier);
 
+        // Si el motor está roto/sobrecalentado, la potencia cae un 75%
+        if (engineOverheat_ > 0.0f) {
+            driveForce *= (1.0f - engineOverheat_ * 0.75f);
+        }
+
+        // Impulso adicional de NITRO
+        if (nitroTimer_ > 0.0f) {
+            driveForce += 650.0f; // Empuje masivo
+        }
+
         float curAbsSpeed = std::abs(speed_);
         if (curAbsSpeed >= gearMaxPhysicalSpeed) {
             driveForce = 0.0f;
@@ -360,4 +421,27 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
     // 5. Avance longitudinal en el circuito (km/h -> m/s)
     float deltaZ = (speed_ / 3.6f) * dt;
     trackZ_ += deltaZ;
+
+    // Actualización de temporizadores de Nitro, Limpiaparabrisas y Alarma
+    if (nitroTimer_ > 0.0f) {
+        nitroTimer_ -= dt;
+        pitch_ += 1.8f; // Mantiene la trompa levantada mientras sopla el nitro
+    }
+
+    if (wiperActive_) {
+        wiperProgress_ += dt * 2.8f; // Ciclo de ida y vuelta rápido (~0.7s)
+        // A la mitad del barrido limpia un gran porcentaje del barro
+        if (wiperProgress_ >= 0.5f && mudSplatter_ > 0.0f) {
+            mudSplatter_ = std::max(0.0f, mudSplatter_ - dt * 2.2f);
+        }
+        if (wiperProgress_ >= 1.0f) {
+            wiperActive_ = false;
+            wiperProgress_ = 0.0f;
+            mudSplatter_ = 0.0f; // Completamente limpio
+        }
+    }
+
+    if (wrongShiftAlarmTimer_ > 0.0f) {
+        wrongShiftAlarmTimer_ -= dt;
+    }
 }

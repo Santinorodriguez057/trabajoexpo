@@ -12,6 +12,10 @@ SoundManager::~SoundManager() {
     if (sfxCheckpoint_) Mix_FreeChunk(sfxCheckpoint_);
     if (sfxCrash_) Mix_FreeChunk(sfxCrash_);
     if (sfxShiftBeep_) Mix_FreeChunk(sfxShiftBeep_);
+    if (sfxNitro_) Mix_FreeChunk(sfxNitro_);
+    if (sfxWiper_) Mix_FreeChunk(sfxWiper_);
+    if (sfxAlarm_) Mix_FreeChunk(sfxAlarm_);
+    if (sfxCool_) Mix_FreeChunk(sfxCool_);
     if (ready_) Mix_CloseAudio();
 }
 
@@ -100,6 +104,17 @@ bool SoundManager::init() {
     sfxCheckpoint_ = generateTone(700, 523, 3.2f, 0.60f, 2);  // Fanfarria checkpoint
     sfxCrash_ = generateTone(450, 55, 7.0f, 0.80f, 3);        // Impacto seco
     sfxShiftBeep_ = generateTone(120, 1050, 5.0f, 0.55f, 2);  // Beep agudo corto tipo F1/GT
+
+    // Nuevos efectos:
+    // Nitro: silbido turbo y rugido de inyección de alta presión
+    sfxNitro_ = generateTone(900, 320, 1.2f, 0.85f, 1);
+    // Limpiaparabrisas: deslizamiento de goma contra cristal húmedo
+    sfxWiper_ = generateTone(350, 480, 4.0f, 0.50f, 1);
+    // Alarma motor roto: pitido estridente y metálico repetido
+    sfxAlarm_ = generateTone(220, 1600, 2.5f, 0.90f, 2);
+    // Toque de enfriamiento de motor: click metálico / soplido de válvula
+    sfxCool_ = generateTone(100, 850, 8.0f, 0.60f, 3);
+
     ready_ = true;
     return true;
 }
@@ -155,4 +170,24 @@ void SoundManager::playCountdownBeep(bool isGo) {
     } else {
         Mix_PlayChannel(-1, sfxShiftBeep_, 0);  // Beep de semáforo rojo
     }
+}
+
+void SoundManager::playNitro() {
+    if (!ready_ || !sfxNitro_) return;
+    Mix_PlayChannel(-1, sfxNitro_, 0);
+}
+
+void SoundManager::playWiper() {
+    if (!ready_ || !sfxWiper_) return;
+    Mix_PlayChannel(-1, sfxWiper_, 0);
+}
+
+void SoundManager::playEngineAlarm() {
+    if (!ready_ || !sfxAlarm_) return;
+    Mix_PlayChannel(-1, sfxAlarm_, 0);
+}
+
+void SoundManager::playEngineCoolTap() {
+    if (!ready_ || !sfxCool_) return;
+    Mix_PlayChannel(-1, sfxCool_, 0);
 }

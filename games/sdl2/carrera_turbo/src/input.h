@@ -18,6 +18,11 @@ struct InputState {
     // Palanca de cambios secuencial (Modo individual arcade / shifter)
     bool shiftUp = false;
     bool shiftDown = false;
+
+    // Mecánicas especiales de cabina arcade (Fight Stick / Teclado)
+    bool nitroTrigger = false;       // Botón X0 (Nitro boost)
+    bool wiperTrigger = false;       // Botón X3 (Limpiaparabrisas)
+    bool coolEngineTap = false;      // Botón X6 (Enfriar motor / Ventilación)
 };
 
 struct DrivingConfig {
@@ -65,6 +70,11 @@ private:
     int prevStickY_ = 0; 
     float shiftCooldown_ = 0.0f;
     bool arcadeUsesButtons_ = false;
+
+    // Estado previo de botones de mecánicas en Fight Stick
+    bool prevArcadeBtn0_ = false;
+    bool prevArcadeBtn3_ = false;
+    bool prevArcadeBtn6_ = false;
 
     InputState state_;
 

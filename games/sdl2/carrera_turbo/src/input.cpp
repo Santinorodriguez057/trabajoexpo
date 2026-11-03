@@ -233,6 +233,11 @@ void InputManager::handleEvent(const SDL_Event& ev) {
             // Fallback de teclado para cambio manual (E = Shift Up, Q = Shift Down)
             if (ev.key.keysym.sym == SDLK_e) state_.shiftUp = true;
             if (ev.key.keysym.sym == SDLK_q) state_.shiftDown = true;
+
+            // Fallback de teclado para mecánicas de cabina (N = Nitro, W = Wiper, C/R = Enfriar motor)
+            if (ev.key.keysym.sym == SDLK_n) state_.nitroTrigger = true;
+            if (ev.key.keysym.sym == SDLK_x) state_.wiperTrigger = true;
+            if (ev.key.keysym.sym == SDLK_f) state_.coolEngineTap = true;
         } else if (playerIndex_ == 1 && !controller_) {
             // Teclado alternativo J2 si no tiene mando: IJKL
             if (ev.key.keysym.sym == SDLK_j) keyLeft_ = true;
@@ -372,9 +377,12 @@ void InputManager::update(float dt) {
     state_.brake = std::clamp(brakeInput, 0.0f, 1.0f);
     state_.handbrake = handbrakeInput;
 
-    // 3. Lectura de Palanca Arcade Secuencial (Zero Delay USB) para cambio de marchas
+    // 3. Lectura de Palanca Arcade Secuencial y Botones de Mecánicas (Zero Delay USB)
     state_.shiftUp = false;
     state_.shiftDown = false;
+    state_.nitroTrigger = false;
+    state_.wiperTrigger = false;
+    state_.coolEngineTap = false;
 
     if (shiftCooldown_ > 0.0f) {
         shiftCooldown_ -= dt;
@@ -396,10 +404,10 @@ void InputManager::update(float dt) {
             else if (hat & SDL_HAT_DOWN) rawY = 1;
         }
 
-        // Solo si los ejes no reportan movimiento, comprobar si se cableó a botones individuales
-        if (rawY == 0 && SDL_JoystickNumButtons(arcadeStick_) >= 2) {
-            if (SDL_JoystickGetButton(arcadeStick_, 0) != 0) rawY = -1;
-            else if (SDL_JoystickGetButton(arcadeStick_, 1) != 0) rawY = 1;
+        // Solo si los ejes no reportan movimiento, comprobar si se cableó a botones individuales (10 y 11)
+        if (rawY == 0 && SDL_JoystickNumButtons(arcadeStick_) >= 12) {
+            if (SDL_JoystickGetButton(arcadeStick_, 10) != 0) rawY = -1;
+            else if (SDL_JoystickGetButton(arcadeStick_, 11) != 0) rawY = 1;
         }
 
         // Detección limpia de flanco con anti-rebote (debounce de 0.28s)
@@ -414,5 +422,26 @@ void InputManager::update(float dt) {
             }
         }
         prevStickY_ = rawY;
+
+        // Lectura de botones auxiliares de acción (Mecánicas solicitadas):
+        // Botón 0: Nitro Boost
+        // Botón 3: Limpiaparabrisas
+        // Botón 6: Enfriar motor / Ventilación
+        int totalBtns = SDL_JoystickNumButtons(arcadeStick_);
+        if (totalBtns > 0) {
+            bool btn0 = (SDL_JoystickGetButton(arcadeStick_, 0) != 0);
+            if (btn0 && !prevArcadeBtn0_) state_.nitroTrigger = true;
+            prevArcadeBtn0_ = btn0;
+        }
+        if (totalBtns > 3) {
+            bool btn3 = (SDL_JoystickGetButton(arcadeStick_, 3) != 0);
+            if (btn3 && !prevArcadeBtn3_) state_.wiperTrigger = true;
+            prevArcadeBtn3_ = btn3;
+        }
+        if (totalBtns > 6) {
+            bool btn6 = (SDL_JoystickGetButton(arcadeStick_, 6) != 0);
+            if (btn6 && !prevArcadeBtn6_) state_.coolEngineTap = true;
+            prevArcadeBtn6_ = btn6;
+        }
     }
 }
