@@ -142,6 +142,86 @@ void UserInterface::renderCalibration(const InputState& input, int playerNum, bo
     renderer_.drawText(isSplit ? fontSmall_ : fontHud_, "SITUAR AL CENTRO Y PRESIONAR [X] O [ENTER]", 960, btnY + (isSplit ? 10 : 12), {18, 18, 18, 255}, true);
 }
 
+void UserInterface::renderDifficultySelect(Difficulty selected) {
+    int modalW = 1180;
+    int modalH = 680;
+    int modalX = 960 - modalW / 2;
+    int modalY = 540 - modalH / 2;
+
+    renderer_.drawNeobrutalRect(modalX, modalY, modalW, modalH, {255, 255, 255, 255}, 6, 12);
+
+    // Cabecera Neobrutalista
+    int headerW = 1000;
+    renderer_.drawNeobrutalRect(960 - headerW / 2, modalY - 30, headerW, 75, {56, 189, 248, 255}, 5, 8);
+    renderer_.drawText(fontTitle_, "SELECCIONA EL NIVEL DE DIFICULTAD", 960, modalY - 22, {18, 18, 18, 255}, true);
+
+    renderer_.drawText(fontHud_, "Usa el Volante o Flechas [Izq / Der] y presiona [X] o [ENTER]", 960, modalY + 68, {55, 65, 81, 255}, true);
+
+    // 3 Tarjetas de dificultad
+    const char* titles[3] = {"FÁCIL", "MEDIA", "DIFÍCIL"};
+    const char* sub1[3] = {
+        "• Solo movimiento del volante",
+        "• Transmisión secuencial (Shifter)",
+        "• Todo lo de Media"
+    };
+    const char* sub2[3] = {
+        "• Marchas 100% automáticas",
+        "• Daño por mal cambio de marcha",
+        "• Botellas de Nitro / Turbo [X0]"
+    };
+    const char* sub3[3] = {
+        "• Sin mecánicas de Fight Stick",
+        "• Purga/enfriamiento de motor [X8]",
+        "• Charcos y limpiaparabrisas [X3]"
+    };
+    SDL_Color cardTheme[3] = {
+        {34, 197, 94, 255},   // Verde Esmeralda (Fácil)
+        {250, 204, 21, 255},  // Amarillo Competición (Media)
+        {239, 68, 68, 255}    // Rojo Fuego (Difícil)
+    };
+
+    int cardW = 340;
+    int cardH = 360;
+    int cardGap = 35;
+    int totalCardsW = 3 * cardW + 2 * cardGap;
+    int startX = 960 - totalCardsW / 2;
+    int cardY = modalY + 120;
+
+    for (int i = 0; i < 3; ++i) {
+        bool isSel = (static_cast<int>(selected) == i);
+        int cx = startX + i * (cardW + cardGap);
+        int cy = isSel ? (cardY - 14) : cardY;
+
+        // Fondo y borde
+        SDL_Color bgCol = isSel ? SDL_Color{255, 255, 255, 255} : SDL_Color{243, 244, 246, 255};
+        renderer_.drawNeobrutalRect(cx, cy, cardW, cardH, bgCol, isSel ? 5 : 3, isSel ? 10 : 5);
+
+        // Cabecera de la tarjeta
+        renderer_.drawNeobrutalRect(cx + 12, cy + 14, cardW - 24, 60, cardTheme[i], 3, 0);
+        renderer_.drawText(fontTitle_, titles[i], cx + cardW / 2, cy + 22, {18, 18, 18, 255}, true);
+
+        // Viñetas descriptivas
+        renderer_.drawText(fontSmall_, sub1[i], cx + 22, cy + 110, {31, 41, 55, 255}, false);
+        renderer_.drawText(fontSmall_, sub2[i], cx + 22, cy + 175, {31, 41, 55, 255}, false);
+        renderer_.drawText(fontSmall_, sub3[i], cx + 22, cy + 240, {31, 41, 55, 255}, false);
+
+        // Insignia inferior
+        if (isSel) {
+            renderer_.drawNeobrutalRect(cx + 30, cy + cardH - 52, cardW - 60, 38, {18, 18, 18, 255}, 2, 0);
+            renderer_.drawText(fontSmall_, ">>> SELECCIONADO <<<", cx + cardW / 2, cy + cardH - 44, {254, 240, 138, 255}, true);
+        } else {
+            renderer_.drawText(fontSmall_, "Presiona para elegir", cx + cardW / 2, cy + cardH - 42, {156, 163, 175, 255}, true);
+        }
+    }
+
+    // Botón Confirmar
+    int btnW = 600;
+    int btnH = 55;
+    int btnY = modalY + modalH - 72;
+    renderer_.drawNeobrutalRect(960 - btnW / 2, btnY, btnW, btnH, {34, 197, 94, 255}, 4, 6);
+    renderer_.drawText(fontHud_, "CONFIRMAR DIFICULTAD Y COMENZAR [X]", 960, btnY + 12, {18, 18, 18, 255}, true);
+}
+
 void UserInterface::renderCountdown(float countdownTimer) {
     // Semáforo Neobrutalista estilo Fórmula 1 en el centro de la pantalla
     // Secuencia de 4 segundos:
@@ -280,7 +360,7 @@ void UserInterface::renderHud(const Car& car, float timeRemaining, int checkpoin
     }
 }
 
-void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int currentLap, int totalLaps, float currentLapTime, float bestLapTime, float lastLapTime, int currentSector, float sectorDelta, float sectorBannerTimer) {
+void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int currentLap, int totalLaps, float currentLapTime, float bestLapTime, float lastLapTime, int currentSector, float sectorDelta, float sectorBannerTimer, Difficulty diff) {
     // =========================================================================
     // HUD NEOBRUTALISTA DE VUELTA RÁPIDA / TIME ATTACK (F1 / Gran Turismo Style)
     // =========================================================================
@@ -425,27 +505,35 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
     int mapY = 140;
     renderMinimap(road, car.getTrackZ(), currentSector, mapX, mapY, mapW, mapH);
 
-    // 6. Indicadores de Estado de Mecánicas de Cabina Arcade (Nitro, Limpiaparabrisas y Motor)
-    // Ubicado en la esquina inferior izquierda del HUD con ancho suficiente para que las letras no se salgan del marco
-    int badgeX = 50;
-    int badgeY = 960;
-    int badgeW = 400;
-    int badgeH = 80;
+    // 6. Indicadores de Estado de Mecánicas de Cabina Arcade (Según nivel de Dificultad)
+    if (diff != Difficulty::EASY) {
+        int badgeX = 50;
+        int badgeY = 960;
+        int badgeW = 400;
+        int badgeH = 80;
 
-    // A. Indicador de Botellas de Nitro
-    SDL_Color nitroCol = car.isNitroActive() ? SDL_Color{250, 204, 21, 255} : SDL_Color{14, 165, 233, 255};
-    renderer_.drawNeobrutalRect(badgeX, badgeY, badgeW, badgeH, {18, 20, 26, 255}, 4, 6);
-    renderer_.drawNeobrutalRect(badgeX + 12, badgeY + 14, 52, 52, nitroCol, 2, 0);
-    renderer_.drawText(fontSmall_, "N2O", badgeX + 38, badgeY + 28, {18, 18, 18, 255}, true);
+        // A. Indicador de Botellas de Nitro (Solo en difícil)
+        SDL_Color nitroCol = car.isNitroActive() ? SDL_Color{250, 204, 21, 255} : SDL_Color{14, 165, 233, 255};
+        renderer_.drawNeobrutalRect(badgeX, badgeY, badgeW, badgeH, {18, 20, 26, 255}, 4, 6);
+        renderer_.drawNeobrutalRect(badgeX + 12, badgeY + 14, 52, 52, nitroCol, 2, 0);
+        renderer_.drawText(fontSmall_, (diff == Difficulty::HARD) ? "N2O" : "RPM", badgeX + 38, badgeY + 28, {18, 18, 18, 255}, true);
 
-    char nitroBuf[64];
-    if (car.isNitroActive()) {
-        std::snprintf(nitroBuf, sizeof(nitroBuf), "NITRO: ACTIVO (%.1fs)", car.getNitroTimer());
-    } else {
-        std::snprintf(nitroBuf, sizeof(nitroBuf), "TURBO / NITRO: x%d [X0]", car.getNitroInventory());
+        char nitroBuf[64];
+        if (diff == Difficulty::HARD) {
+            if (car.isNitroActive()) {
+                std::snprintf(nitroBuf, sizeof(nitroBuf), "NITRO: ACTIVO (%.1fs)", car.getNitroTimer());
+            } else {
+                std::snprintf(nitroBuf, sizeof(nitroBuf), "TURBO / NITRO: x%d [X0]", car.getNitroInventory());
+            }
+            renderer_.drawText(fontSmall_, nitroBuf, badgeX + 78, badgeY + 16, nitroCol, false);
+            renderer_.drawText(fontSmall_, "Limpia: [X3]  |  Enfría: [X8]", badgeX + 78, badgeY + 46, {148, 163, 184, 255}, false);
+        } else {
+            // Dificultad MEDIA: Marchas manuales y enfriamiento
+            std::snprintf(nitroBuf, sizeof(nitroBuf), "MODO: TRANSMISIÓN MANUAL");
+            renderer_.drawText(fontSmall_, nitroBuf, badgeX + 78, badgeY + 16, {250, 204, 21, 255}, false);
+            renderer_.drawText(fontSmall_, "Palanca: Cambios | Enfría: [X8]", badgeX + 78, badgeY + 46, {148, 163, 184, 255}, false);
+        }
     }
-    renderer_.drawText(fontSmall_, nitroBuf, badgeX + 78, badgeY + 16, nitroCol, false);
-    renderer_.drawText(fontSmall_, "Limpia: [X3]  |  Enfría: [X8]", badgeX + 78, badgeY + 46, {148, 163, 184, 255}, false);
 }
 
 void UserInterface::renderMinimap(const Road& road, float playerZ, int currentSector, int mapX, int mapY, int mapW, int mapH) {

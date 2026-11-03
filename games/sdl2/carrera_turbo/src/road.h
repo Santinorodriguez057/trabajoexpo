@@ -55,7 +55,7 @@ class Road {
 public:
     Road();
 
-    void generateTrack(bool isTimeAttack = false);
+    void generateTrack(bool isTimeAttack = false, bool enableNitroAndMud = true);
     void update(float dt);
 
     const RoadSegment& getSegment(int index) const;

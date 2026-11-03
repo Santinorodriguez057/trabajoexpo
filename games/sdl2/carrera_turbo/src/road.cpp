@@ -64,7 +64,7 @@ void Road::addHill(int num, float height) {
     }
 }
 
-void Road::generateTrack(bool isTimeAttack) {
+void Road::generateTrack(bool isTimeAttack, bool enableNitroAndMud) {
     segments_.clear();
     traffic_.clear();
 
@@ -202,18 +202,20 @@ void Road::generateTrack(bool isTimeAttack) {
     }
 
     // BOTES DE NITRO Y CHARCOS DE BARRO SOBRE LA PISTA (offset entre -0.7 y +0.7)
-    // Distribuidos de forma equilibrada a lo largo del circuito
-    for (size_t i = 15; i < segments_.size() - 15; ++i) {
-        if (i % 38 == 0) {
-            // Botellas de Nitro en carriles izquierdo, centro o derecho
-            float nitroOffsets[3] = {-0.55f, 0.0f, 0.55f};
-            float off = nitroOffsets[(i / 38) % 3];
-            segments_[i].props.push_back({PropType::NITRO_BOTTLE, off});
-        } else if (i % 45 == 22) {
-            // Charcos de barro técnico
-            float mudOffsets[3] = {0.45f, -0.45f, 0.0f};
-            float off = mudOffsets[(i / 45) % 3];
-            segments_[i].props.push_back({PropType::MUD_PUDDLE, off});
+    // Solo se generan si están habilitadas las mecánicas avanzadas (Dificultad Difícil)
+    if (enableNitroAndMud) {
+        for (size_t i = 15; i < segments_.size() - 15; ++i) {
+            if (i % 38 == 0) {
+                // Botellas de Nitro en carriles izquierdo, centro o derecho
+                float nitroOffsets[3] = {-0.55f, 0.0f, 0.55f};
+                float off = nitroOffsets[(i / 38) % 3];
+                segments_[i].props.push_back({PropType::NITRO_BOTTLE, off});
+            } else if (i % 45 == 22) {
+                // Charcos de barro técnico
+                float mudOffsets[3] = {0.45f, -0.45f, 0.0f};
+                float off = mudOffsets[(i / 45) % 3];
+                segments_[i].props.push_back({PropType::MUD_PUDDLE, off});
+            }
         }
     }
 

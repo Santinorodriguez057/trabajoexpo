@@ -101,8 +101,11 @@ int main(int argc, char** argv) {
     // Si hay 1 DualShock + 1 placa Arcade (Zero Delay), el modo es INDIVIDUAL (DualShock volante + Arcade Shifter)
     bool isSplitScreen = (input1.hasController() && input2.hasController() && input1.hasGyro() && input2.hasGyro());
 
-    // Si hay una palanca arcade conectada o estamos en 1P, activamos transmisión manual secuencial para P1
-    bool p1ManualTransmission = !isSplitScreen;
+    // Nivel de dificultad inicial (por defecto DIFICIL para tener todo disponible, seleccionable al inicio)
+    Difficulty difficulty = Difficulty::HARD;
+
+    // Control de transmisión manual: depende de la dificultad
+    bool p1ManualTransmission = (difficulty != Difficulty::EASY) && !isSplitScreen;
 
     SoundManager sound;
     sound.init();
@@ -117,7 +120,8 @@ int main(int argc, char** argv) {
 
     Road road;
     // En modo individual (1P Time Attack), pista limpia sin tráfico ni arcos de checkpoint arcade
-    road.generateTrack(!isSplitScreen);
+    // Nitro y charcos de barro solo activos en dificultad DIFÍCIL
+    road.generateTrack(!isSplitScreen, difficulty == Difficulty::HARD);
     road.enableTraffic(isSplitScreen);
 
     Renderer renderer(ren, fontTitle, fontHud, fontSmall);
@@ -238,12 +242,55 @@ int main(int argc, char** argv) {
                 if (in1.confirm || (isSplitScreen && in2.confirm)) {
                     input1.calibrate();
                     if (isSplitScreen) input2.calibrate();
-                    countdownTimer = 4.0f;
-                    lastCountdownStep = 5;
-                    sound.playCountdownBeep(false); // Primer beep rojo
-                    state = GameState::COUNTDOWN;
+                    if (!isSplitScreen) {
+                        state = GameState::DIFFICULTY_SELECT;
+                    } else {
+                        countdownTimer = 4.0f;
+                        lastCountdownStep = 5;
+                        sound.playCountdownBeep(false); // Primer beep rojo
+                        state = GameState::COUNTDOWN;
+                    }
                 } else if (in1.cancel || (isSplitScreen && in2.cancel)) {
                     running = false;
+                }
+                break;
+
+            case GameState::DIFFICULTY_SELECT:
+                // Navegación con dirección (volante o flechas / D-Pad)
+                {
+                    static float navCooldown = 0.0f;
+                    if (navCooldown > 0.0f) navCooldown -= dt;
+
+                    int curDiff = static_cast<int>(difficulty);
+                    if (navCooldown <= 0.0f) {
+                        if (in1.steering < -0.45f) {
+                            curDiff = std::max(0, curDiff - 1);
+                            difficulty = static_cast<Difficulty>(curDiff);
+                            sound.playShiftAlert();
+                            navCooldown = 0.28f;
+                        } else if (in1.steering > 0.45f) {
+                            curDiff = std::min(2, curDiff + 1);
+                            difficulty = static_cast<Difficulty>(curDiff);
+                            sound.playShiftAlert();
+                            navCooldown = 0.28f;
+                        }
+                    }
+
+                    if (in1.confirm) {
+                        // Aplicar reglas del nivel de dificultad seleccionado
+                        // Fácil: automático, sin mecánicas fight stick
+                        // Media: manual con shifter + daño/enfriamiento por mal cambio
+                        // Difícil: manual + daño + nitro/turbo + charcos con limpiaparabrisas
+                        p1ManualTransmission = (difficulty != Difficulty::EASY);
+                        road.generateTrack(!isSplitScreen, difficulty == Difficulty::HARD);
+
+                        countdownTimer = 4.0f;
+                        lastCountdownStep = 5;
+                        sound.playCountdownBeep(false);
+                        state = GameState::COUNTDOWN;
+                    } else if (in1.cancel) {
+                        state = GameState::CALIBRATION;
+                    }
                 }
                 break;
 
@@ -318,36 +365,44 @@ int main(int argc, char** argv) {
 
                     float trackLength = road.getTrackLength();
 
-                    // GESTIÓN DE ENTRADAS DE LAS 3 MECÁNICAS NUEVAS (Fight Stick X0, X3, X6 o Teclado N, X, F):
-                    if (in1.nitroTrigger) {
-                        if (car1.getNitroInventory() > 0 && !car1.isNitroActive()) {
-                            car1.triggerNitro();
-                            sound.playNitro();
-                            input1.setRumble(0.8f, 0.9f, 400);
-                            input1.setLED(14, 165, 233); // Celeste eléctrico Nitro
+                    // GESTIÓN DE ENTRADAS DE MECÁNICAS SEGÚN DIFICULTAD:
+                    // Fácil: sin mecánicas del fight stick
+                    // Media: mal cambio y enfriamiento de motor
+                    // Difícil: todo lo anterior + Nitro y Limpiaparabrisas
+                    if (difficulty == Difficulty::HARD) {
+                        if (in1.nitroTrigger) {
+                            if (car1.getNitroInventory() > 0 && !car1.isNitroActive()) {
+                                car1.triggerNitro();
+                                sound.playNitro();
+                                input1.setRumble(0.8f, 0.9f, 400);
+                                input1.setLED(14, 165, 233); // Celeste eléctrico Nitro
+                            }
                         }
-                    }
-                    if (in1.wiperTrigger) {
-                        car1.triggerWiper();
-                        sound.playWiper();
-                    }
-                    if (in1.coolEngineTap) {
-                        if (car1.getCoolEngineTapsNeeded() > 0) {
-                            car1.tapCoolEngine();
-                            sound.playEngineCoolTap();
-                            input1.setRumble(0.4f, 0.6f, 100);
+                        if (in1.wiperTrigger) {
+                            car1.triggerWiper();
+                            sound.playWiper();
                         }
                     }
 
-                    // Sonido y LED de alarma cuando el motor está roto
-                    if (car1.isEngineBlown()) {
-                        static float alarmSoundTimer = 0.0f;
-                        alarmSoundTimer -= dt;
-                        if (alarmSoundTimer <= 0.0f) {
-                            sound.playEngineAlarm();
-                            alarmSoundTimer = 0.5f;
-                            input1.setLED(239, 68, 68);
-                            input1.setRumble(0.7f, 0.4f, 200);
+                    if (difficulty != Difficulty::EASY) {
+                        if (in1.coolEngineTap) {
+                            if (car1.getCoolEngineTapsNeeded() > 0) {
+                                car1.tapCoolEngine();
+                                sound.playEngineCoolTap();
+                                input1.setRumble(0.4f, 0.6f, 100);
+                            }
+                        }
+
+                        // Sonido y LED de alarma cuando el motor está roto
+                        if (car1.isEngineBlown()) {
+                            static float alarmSoundTimer = 0.0f;
+                            alarmSoundTimer -= dt;
+                            if (alarmSoundTimer <= 0.0f) {
+                                sound.playEngineAlarm();
+                                alarmSoundTimer = 0.5f;
+                                input1.setLED(239, 68, 68);
+                                input1.setRumble(0.7f, 0.4f, 200);
+                            }
                         }
                     }
 
@@ -712,9 +767,11 @@ int main(int argc, char** argv) {
             if (isSplitScreen) {
                 ui.renderCalibration(in2, 2, true);
             }
+        } else if (state == GameState::DIFFICULTY_SELECT) {
+            ui.renderDifficultySelect(difficulty);
         } else if (state == GameState::COUNTDOWN) {
             if (!isSplitScreen) {
-                ui.renderTimeAttackHud(car1, road, currentLap, kTotalLaps, currentLapTime, bestLapTime, lastLapTime, currentSector, sectorDelta, sectorBannerTimer);
+                ui.renderTimeAttackHud(car1, road, currentLap, kTotalLaps, currentLapTime, bestLapTime, lastLapTime, currentSector, sectorDelta, sectorBannerTimer, difficulty);
             }
             ui.renderCountdown(countdownTimer);
         } else if (state == GameState::RACING) {
@@ -724,7 +781,7 @@ int main(int argc, char** argv) {
                 ui.renderHud(car2, timeRemaining, checkpointsPassed2, bonusBannerTimer2, true, 2, -gap1);
             } else {
                 // HUD DE VUELTA RÁPIDA / TIME ATTACK CON MINI MAPA DE SECTORES
-                ui.renderTimeAttackHud(car1, road, currentLap, kTotalLaps, currentLapTime, bestLapTime, lastLapTime, currentSector, sectorDelta, sectorBannerTimer);
+                ui.renderTimeAttackHud(car1, road, currentLap, kTotalLaps, currentLapTime, bestLapTime, lastLapTime, currentSector, sectorDelta, sectorBannerTimer, difficulty);
             }
         } else if (state == GameState::FINISH) {
             if (isSplitScreen) {
