@@ -143,7 +143,7 @@ void UserInterface::renderCalibration(const InputState& input, int playerNum, bo
 }
 
 void UserInterface::renderDifficultySelect(Difficulty selected) {
-    int modalW = 1180;
+    int modalW = 1260;
     int modalH = 680;
     int modalX = 960 - modalW / 2;
     int modalY = 540 - modalH / 2;
@@ -151,7 +151,7 @@ void UserInterface::renderDifficultySelect(Difficulty selected) {
     renderer_.drawNeobrutalRect(modalX, modalY, modalW, modalH, {255, 255, 255, 255}, 6, 12);
 
     // Cabecera Neobrutalista
-    int headerW = 1000;
+    int headerW = 1040;
     renderer_.drawNeobrutalRect(960 - headerW / 2, modalY - 30, headerW, 75, {56, 189, 248, 255}, 5, 8);
     renderer_.drawText(fontTitle_, "SELECCIONA EL NIVEL DE DIFICULTAD", 960, modalY - 22, {18, 18, 18, 255}, true);
 
@@ -160,18 +160,18 @@ void UserInterface::renderDifficultySelect(Difficulty selected) {
     // 3 Tarjetas de dificultad
     const char* titles[3] = {"FÁCIL", "MEDIA", "DIFÍCIL"};
     const char* sub1[3] = {
-        "• Solo movimiento del volante",
-        "• Transmisión secuencial (Shifter)",
-        "• Todo lo de Media"
+        "• Solo dirección del volante",
+        "• Shifter secuencial (Palanca)",
+        "• Todo lo de Media incluido"
     };
     const char* sub2[3] = {
         "• Marchas 100% automáticas",
-        "• Daño por mal cambio de marcha",
+        "• Daño por mal cambio",
         "• Botellas de Nitro / Turbo [X0]"
     };
     const char* sub3[3] = {
-        "• Sin mecánicas de Fight Stick",
-        "• Purga/enfriamiento de motor [X8]",
+        "• Sin botones del Fight Stick",
+        "• Enfriamiento de motor [X8]",
         "• Charcos y limpiaparabrisas [X3]"
     };
     SDL_Color cardTheme[3] = {
@@ -180,9 +180,9 @@ void UserInterface::renderDifficultySelect(Difficulty selected) {
         {239, 68, 68, 255}    // Rojo Fuego (Difícil)
     };
 
-    int cardW = 340;
+    int cardW = 380;
     int cardH = 360;
-    int cardGap = 35;
+    int cardGap = 24;
     int totalCardsW = 3 * cardW + 2 * cardGap;
     int startX = 960 - totalCardsW / 2;
     int cardY = modalY + 120;
@@ -201,9 +201,9 @@ void UserInterface::renderDifficultySelect(Difficulty selected) {
         renderer_.drawText(fontTitle_, titles[i], cx + cardW / 2, cy + 22, {18, 18, 18, 255}, true);
 
         // Viñetas descriptivas
-        renderer_.drawText(fontSmall_, sub1[i], cx + 22, cy + 110, {31, 41, 55, 255}, false);
-        renderer_.drawText(fontSmall_, sub2[i], cx + 22, cy + 175, {31, 41, 55, 255}, false);
-        renderer_.drawText(fontSmall_, sub3[i], cx + 22, cy + 240, {31, 41, 55, 255}, false);
+        renderer_.drawText(fontSmall_, sub1[i], cx + 18, cy + 110, {31, 41, 55, 255}, false);
+        renderer_.drawText(fontSmall_, sub2[i], cx + 18, cy + 175, {31, 41, 55, 255}, false);
+        renderer_.drawText(fontSmall_, sub3[i], cx + 18, cy + 240, {31, 41, 55, 255}, false);
 
         // Insignia inferior
         if (isSel) {
@@ -215,7 +215,7 @@ void UserInterface::renderDifficultySelect(Difficulty selected) {
     }
 
     // Botón Confirmar
-    int btnW = 600;
+    int btnW = 760;
     int btnH = 55;
     int btnY = modalY + modalH - 72;
     renderer_.drawNeobrutalRect(960 - btnW / 2, btnY, btnW, btnH, {34, 197, 94, 255}, 4, 6);
