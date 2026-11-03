@@ -9,13 +9,13 @@
 #include "audio.h"
 #include "theme.hpp"
 
-struct StuckArrow {
-    float localX; // Desplazamiento respecto al centro de la diana
+struct TargetImpact {
+    float localX; // Desplazamiento respecto al centro de la lata
     float localY;
-    float angle;  // Ángulo de inclinación de la flecha clavada
+    int targetIndex;
 };
 
-struct FlyingArrow {
+struct FlyingBullet {
     float x = 0.0f;
     float y = 0.0f;
     float z = 0.0f;
@@ -25,6 +25,8 @@ struct FlyingArrow {
     float initialSpeed = 0.0f;
     bool active = false;
     std::vector<SDL_FPoint> trail;
+    float impactFlash = 0.0f;
+    SDL_FPoint impactPoint{0.0f, 0.0f};
 };
 
 struct FloatingText {
@@ -35,6 +37,22 @@ struct FloatingText {
     float maxLife;
     SDL_Color color;
     float scale;
+};
+
+struct MissMark {
+    float x;
+    float y;
+    float life;
+};
+
+struct ConfettiPiece {
+    float x;
+    float y;
+    float vx;
+    float vy;
+    float life;
+    SDL_Color color;
+    int size;
 };
 
 enum class GameState {
@@ -58,14 +76,15 @@ private:
     void render();
 
     void startRound(int roundNumber);
-    void shootArrow(float tension);
+    void restartMatch();
+    void shootGun();
     void evaluateImpact(float hitX, float hitY);
 
     // Helpers de renderizado
     void renderBackground();
-    void renderTarget();
-    void renderFlyingArrow();
-    void renderFirstPersonBow();
+    void renderFairTargets();
+    void renderBullet();
+    void renderGun();
     void renderHUD();
     void renderCalibrationScreen();
     void renderRoundSummary();
@@ -79,6 +98,7 @@ private:
 
     // Proyección 3D a pantalla 1920x1080
     SDL_Point project3D(float x, float y, float z);
+    SDL_Point getMuzzleScreenPos() const;
 
     SDL_Renderer* ren_;
     TTF_Font* fontLarge_;
@@ -94,41 +114,62 @@ private:
 
     // Configuración de partida
     const int kTotalRounds = 10;
-    const int kArrowsPerRound = 5;
+    const int kShotsPerRound = 5;
 
     int currentRound_ = 1;
-    int arrowsRemaining_ = 5;
+    int shotsRemaining_ = 5;
     int totalScore_ = 0;
     int roundScore_ = 0;
+    int targetsDownThisRound_ = 0;
+    int comboHits_ = 0;
     int totalHits_ = 0;
     int totalBullseyes_ = 0;
     int bestShotPoints_ = 0;
     bool isNewRecord_ = false;
 
-    // Parámetros de la diana en la ronda actual
+    // Parámetros de la fila de latas en el puesto actual
     float targetDistance_ = 25.0f; // metros (Z)
     float targetX_ = 0.0f;         // metros (X)
     float targetY_ = 1.3f;         // metros (Y altura)
-    float targetRadius_ = 0.61f;   // 122cm de diámetro (oficial FITA)
-    float targetWobble_ = 0.0f;    // oscilación por impacto
+    float targetRadius_ = 0.52f;   // Radio de impacto, escalado para conservar tamaño aparente
+    static constexpr int kTargetCount = 5;
+    float targetScreenOffsetX_[kTargetCount] = {};
+    float targetScreenOffsetY_[kTargetCount] = {};
+    float targetBaseOffsetX_[kTargetCount] = {};
+    float targetBaseOffsetY_[kTargetCount] = {};
+    int targetKind_[kTargetCount] = {}; // 0 normal, 1 penalización, 2 dorado
+    bool targetVisible_[kTargetCount] = {true, true, true, true, true};
+    float targetFallAngle_[kTargetCount] = {};
+    float targetFallVelocity_[kTargetCount] = {};
+    bool targetFallen_[kTargetCount] = {};
 
-    // Flechas
-    FlyingArrow activeArrow_;
-    std::vector<StuckArrow> stuckArrows_;
+    // Proyectil y marcas de impactos
+    FlyingBullet activeBullet_;
+    std::vector<TargetImpact> targetImpacts_;
     std::vector<FloatingText> floatingTexts_;
+    std::vector<MissMark> missMarks_;
+    std::vector<ConfettiPiece> confetti_;
 
-    // Animación de cuerda del arco
-    float stringVibration_ = 0.0f;
-    float stringVibeTimer_ = 0.0f;
+    float muzzleFlashTimer_ = 0.0f;
+    float shotRecoil_ = 0.0f;
+    float reticlePulseTimer_ = 0.0f;
+    float screenFlashTimer_ = 0.0f;
+    int screenFlashAlpha_ = 0;
+    int missFlashCount_ = 0;
+    SDL_Color screenFlashColor_{255, 240, 210, 255};
+    float weaponSwayX_ = 0.0f;
 
     // Menú de pausa
     int pauseMenuIndex_ = 0;
+    int lastHudScore_ = -1;
 
-    // Variables de tiempo, viento y temblor
+    // Variables de tiempo y temblor
     float roundTime_ = 0.0f;
     float screenShakeTrauma_ = 0.0f;
-    float windSpeed_ = 0.0f;
-    float windX_ = 0.0f;
-    float windY_ = 0.0f;
-    std::string windLabel_ = "0.0 M/S";
+    float fairCelebrationTimer_ = 0.0f;
+    float hudEntryTimer_ = 0.0f;
+    float scorePulseTimer_ = 0.0f;
+    float roundBannerTimer_ = 0.0f;
+    float roundEndTimer_ = 0.0f;
+    bool roundEnding_ = false;
 };

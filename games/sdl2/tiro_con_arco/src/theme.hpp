@@ -25,15 +25,6 @@ namespace ArcheryTheme {
     constexpr SDL_Color COLOR_ACCENT_GREEN = {35, 160, 60, 255};   // Acento verde / listo / éxito
     constexpr SDL_Color COLOR_ACCENT_BLUE  = {30, 95, 185, 255};   // Acento azul frío
     
-    // Materiales del Arco y Flecha
-    constexpr SDL_Color COLOR_WOOD_DARK    = {115, 60, 25, 255};   // Madera noble brazos del arco
-    constexpr SDL_Color COLOR_WOOD_LIGHT   = {160, 95, 45, 255};   // Borde madera
-    constexpr SDL_Color COLOR_BOW_GRIP     = {30, 30, 35, 255};    // Empuñadura central
-    constexpr SDL_Color COLOR_STRING       = {255, 255, 255, 255}; // Cuerda tensada
-    constexpr SDL_Color COLOR_ARROW_SHAFT  = {215, 185, 130, 255}; // Vástago de la flecha
-    constexpr SDL_Color COLOR_ARROW_TIP    = {230, 230, 240, 255}; // Punta de acero
-    constexpr SDL_Color COLOR_ARROW_FLETCH = {220, 40, 40, 255};   // Plumas rojas
-
     // =========================================================================
     // DIMENSIONES Y GEOMETRÍA
     // =========================================================================
@@ -46,9 +37,8 @@ namespace ArcheryTheme {
     // CONSTANTES DE EXTRAS (Paso 5)
     // Cada extra es activable/desactivable independientemente
     // =========================================================================
-    constexpr bool EXTRA_ENABLE_RUMBLE         = true; // Vibración al tensar y soltar
-    constexpr bool EXTRA_ENABLE_FLOATING_TEXTS = true; // Texto flotante con flecha y temblor
-    constexpr bool EXTRA_ENABLE_WIND           = true; // Viento en el HUD que desvía el tiro
+    constexpr bool EXTRA_ENABLE_RUMBLE         = true; // Vibración al disparar y acertar
+    constexpr bool EXTRA_ENABLE_FLOATING_TEXTS = true; // Puntuación flotante y temblor
     constexpr bool EXTRA_ENABLE_SAVED_RECORD   = true; // Guardado de récord en archivo
     constexpr bool EXTRA_ENABLE_SUMMARY_SCREEN = true; // Pantalla de resumen tras 10 rondas
 

@@ -8,6 +8,7 @@ SoundManager::~SoundManager() {
     if (sfxTensar_) Mix_FreeChunk(sfxTensar_);
     if (sfxDisparo_) Mix_FreeChunk(sfxDisparo_);
     if (sfxImpacto_) Mix_FreeChunk(sfxImpacto_);
+    if (sfxError_) Mix_FreeChunk(sfxError_);
     if (sfxDiana_) Mix_FreeChunk(sfxDiana_);
     if (sfxVictoria_) Mix_FreeChunk(sfxVictoria_);
     if (ready_) Mix_CloseAudio();
@@ -41,6 +42,7 @@ bool SoundManager::init() {
     sfxTensar_ = Mix_LoadWAV(resolvePath("tensar.wav").c_str());
     sfxDisparo_ = Mix_LoadWAV(resolvePath("disparo.wav").c_str());
     sfxImpacto_ = Mix_LoadWAV(resolvePath("impacto.wav").c_str());
+    sfxError_ = Mix_LoadWAV(resolvePath("error.wav").c_str()); // Opcional: punto de enganche para sonido de fallo.
     sfxDiana_ = Mix_LoadWAV(resolvePath("diana.wav").c_str());
     sfxVictoria_ = Mix_LoadWAV(resolvePath("victoria.wav").c_str());
 
@@ -71,6 +73,12 @@ void SoundManager::playShoot() {
 void SoundManager::playImpact() {
     if (!ready_ || !sfxImpacto_) return;
     Mix_PlayChannel(-1, sfxImpacto_, 0);
+}
+
+void SoundManager::playError() {
+    if (!ready_) return;
+    if (sfxError_) Mix_PlayChannel(-1, sfxError_, 0);
+    else playImpact();
 }
 
 void SoundManager::playBullseye() {
