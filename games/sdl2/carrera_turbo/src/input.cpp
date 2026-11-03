@@ -211,9 +211,8 @@ void InputManager::handleEvent(const SDL_Event& ev) {
         // Asegurar que cada instancia solo responde a su propio mando físico
         if (controller_ && ev.cbutton.which == SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller_))) {
             if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) state_.confirm = true;
-            else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B) state_.cancel = true;
-            else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_START || ev.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) state_.pause = true;
-            else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_Y || ev.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
+            else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_START) state_.pause = true;
+            else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_Y) {
                 calibrate();
             }
         }
@@ -351,10 +350,8 @@ void InputManager::update(float dt) {
             throttleInput = static_cast<float>(rawR2) / 32767.0f;
         }
 
-        // Freno: Botón L1 como primario, además de L2 si no acelera o Gatillo R1 / Círculo / Cuadrado
-        if (btnL1 || SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) ||
-            SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_B) ||
-            SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_X)) {
+        // Freno: Botón L1 como primario en el DualShock
+        if (btnL1 || SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) {
             brakeInput = 1.0f;
         }
     }
