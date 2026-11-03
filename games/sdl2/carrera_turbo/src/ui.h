@@ -49,4 +49,5 @@ private:
     DrivingConfig& config_;
 
     SDL_Texture* controllerTex_ = nullptr;
+    SDL_Texture* watermarkTex_ = nullptr;
 };

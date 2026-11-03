@@ -46,6 +46,7 @@ private:
     bool awaitingStart_ = true;
 
     std::unordered_map<std::string, SDL_Texture*> textCache_;
+    SDL_Texture* watermarkTex_ = nullptr;
 
     GameLauncher launcher_;
 };

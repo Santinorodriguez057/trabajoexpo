@@ -5,12 +5,36 @@ Menu::Menu(SDL_Renderer* renderer, TTF_Font* font, const std::vector<GameEntry>&
     : renderer_(renderer), font_(font), games_(games) {
     openController();
     hoverValues_.resize(games.size(), 0.0f);
+
+    // Carga del logo "itf" como marca de agua
+    const char* possiblePaths[] = {
+        "assets/itf_logo.bmp",
+        "../assets/itf_logo.bmp",
+        "../../assets/itf_logo.bmp",
+        "/home/santino/proyectos/trabajo expo/assets/itf_logo.bmp"
+    };
+    for (const char* p : possiblePaths) {
+        SDL_Surface* surf = SDL_LoadBMP(p);
+        if (surf) {
+            watermarkTex_ = SDL_CreateTextureFromSurface(renderer_, surf);
+            SDL_FreeSurface(surf);
+            if (watermarkTex_) {
+                SDL_SetTextureBlendMode(watermarkTex_, SDL_BLENDMODE_BLEND);
+                SDL_SetTextureAlphaMod(watermarkTex_, 75); // Sutil y elegante como marca de agua
+                break;
+            }
+        }
+    }
 }
 
 Menu::~Menu() {
     closeController();
     for (auto& pair : textCache_) {
         SDL_DestroyTexture(pair.second);
+    }
+    if (watermarkTex_) {
+        SDL_DestroyTexture(watermarkTex_);
+        watermarkTex_ = nullptr;
     }
 }
 
@@ -158,6 +182,12 @@ void Menu::render() {
         float textScale = 0.65f * btnScale;
         renderText("PULSA X PARA INICIAR", 1920 / 2, btnY + btnH/2, SDL_Color{10, 10, 10, 255}, textScale, true);
 
+        // Marca de agua en la pantalla de bienvenida (arriba a la derecha)
+        if (watermarkTex_) {
+            SDL_Rect markRect = {1920 - 240, 36, 190, 147};
+            SDL_RenderCopy(renderer_, watermarkTex_, nullptr, &markRect);
+        }
+
         SDL_RenderPresent(renderer_);
         return;
     }
@@ -165,6 +195,12 @@ void Menu::render() {
     // Titulo masivo y moderno
     renderText("DUAL SHOW", 120, 80, SDL_Color{10, 10, 10, 255}, 1.0f);
     renderText("SELECCIONA UN PROYECTO", 130, 220, SDL_Color{100, 100, 100, 255}, 0.4f);
+
+    // Marca de agua arriba a la derecha
+    if (watermarkTex_) {
+        SDL_Rect markRect = {1920 - 240, 36, 190, 147};
+        SDL_RenderCopy(renderer_, watermarkTex_, nullptr, &markRect);
+    }
 
     // Línea gruesa debajo del título
     SDL_SetRenderDrawColor(renderer_, 10, 10, 10, 255);

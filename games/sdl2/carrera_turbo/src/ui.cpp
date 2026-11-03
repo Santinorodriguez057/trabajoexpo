@@ -24,12 +24,36 @@ UserInterface::UserInterface(Renderer& renderer, TTF_Font* fontTitle, TTF_Font* 
             }
         }
     }
+
+    // Carga de la imagen de marca de agua itf
+    const char* itfPaths[] = {
+        "assets/itf_logo.bmp",
+        "../assets/itf_logo.bmp",
+        "../../assets/itf_logo.bmp",
+        "/home/santino/proyectos/trabajo expo/assets/itf_logo.bmp"
+    };
+    for (const char* p : itfPaths) {
+        SDL_Surface* surf = SDL_LoadBMP(p);
+        if (surf) {
+            watermarkTex_ = SDL_CreateTextureFromSurface(renderer_.getRenderer(), surf);
+            SDL_FreeSurface(surf);
+            if (watermarkTex_) {
+                SDL_SetTextureBlendMode(watermarkTex_, SDL_BLENDMODE_BLEND);
+                SDL_SetTextureAlphaMod(watermarkTex_, 85);
+                break;
+            }
+        }
+    }
 }
 
 UserInterface::~UserInterface() {
     if (controllerTex_) {
         SDL_DestroyTexture(controllerTex_);
         controllerTex_ = nullptr;
+    }
+    if (watermarkTex_) {
+        SDL_DestroyTexture(watermarkTex_);
+        watermarkTex_ = nullptr;
     }
 }
 
@@ -220,6 +244,12 @@ void UserInterface::renderDifficultySelect(Difficulty selected) {
     int btnY = modalY + modalH - 72;
     renderer_.drawNeobrutalRect(960 - btnW / 2, btnY, btnW, btnH, {34, 197, 94, 255}, 4, 6);
     renderer_.drawText(fontHud_, "CONFIRMAR DIFICULTAD Y COMENZAR [X]", 960, btnY + 12, {18, 18, 18, 255}, true);
+
+    // Marca de agua arriba a la derecha en la selección de dificultad
+    if (watermarkTex_) {
+        SDL_Rect markRect = {1920 - 220, 28, 180, 139};
+        SDL_RenderCopy(renderer_.getRenderer(), watermarkTex_, nullptr, &markRect);
+    }
 }
 
 void UserInterface::renderCountdown(float countdownTimer) {
@@ -431,8 +461,8 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
     // 4. Banner animado al cruzar Sector o Meta con Delta (+/- en verde o rojo)
     if (sectorBannerTimer > 0.0f) {
         bool isLap2Start = (currentLap == 2 && currentSector == 1 && completedSectorNotice == 0 && lastLapTime > 0.0f);
-        int bW = isLap2Start ? 820 : 640;
-        int bH = 75;
+        int bW = isLap2Start ? 960 : 660;
+        int bH = isLap2Start ? 82 : 75;
         int bannerX = 960 - bW / 2;
         int bannerY = 125;
 
@@ -453,7 +483,7 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
         } else {
             std::snprintf(deltaBuf, sizeof(deltaBuf), "SECTOR %d  •  +%.2fs", secNum, sectorDelta);
         }
-        renderer_.drawText(fontTitle_, deltaBuf, 960, bannerY + 14, {18, 18, 18, 255}, true);
+        renderer_.drawText(fontTitle_, deltaBuf, 960, bannerY + (isLap2Start ? 17 : 14), {18, 18, 18, 255}, true);
     }
 
     // 4.1 Cartel Modernizado de Reducción de Velocidad / Curva Peligrosa (Apex Braking Indicator)
