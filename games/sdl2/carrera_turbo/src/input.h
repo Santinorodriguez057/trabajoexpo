@@ -73,6 +73,12 @@ private:
     float calibratedRoll_ = 0.0f;
     float targetSteering_ = 0.0f;
 
+    // Anti-latigazo de gatillos (L1 freno / L2 acelerador) y recalibración en carrera
+    bool prevL1_ = false;
+    bool prevL2_ = false;
+    float pedalHoldTimer_ = 0.0f;
+    bool prevRecalBtn_ = false;
+
     // Entradas de teclado
     bool keyLeft_ = false;
     bool keyRight_ = false;

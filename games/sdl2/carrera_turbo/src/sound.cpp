@@ -147,3 +147,12 @@ void SoundManager::playShiftAlert() {
     if (!ready_ || !sfxShiftBeep_) return;
     Mix_PlayChannel(-1, sfxShiftBeep_, 0);
 }
+
+void SoundManager::playCountdownBeep(bool isGo) {
+    if (!ready_) return;
+    if (isGo) {
+        Mix_PlayChannel(-1, sfxCheckpoint_, 0); // Tono agudo festivo para la largada
+    } else {
+        Mix_PlayChannel(-1, sfxShiftBeep_, 0);  // Beep de semáforo rojo
+    }
+}

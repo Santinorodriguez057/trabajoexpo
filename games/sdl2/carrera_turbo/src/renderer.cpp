@@ -200,14 +200,16 @@ void Renderer::renderThickLine(float x1, float y1, float x2, float y2, float thi
 }
 
 void Renderer::renderSky(float carX, float skyScrollX, float horizonY, float raceTime, int viewW, int viewH) {
+    (void)carX;
+    (void)viewH;
     int hY = static_cast<int>(horizonY);
 
-    // 1. Cielo con gradiente suave por hardware (Top -> Mid -> Horizon)
-    SDL_Color skyTop = {15, 23, 42, 255};     // Azul noche profundo
-    SDL_Color skyMid = {88, 28, 135, 255};    // Púrpura synth
-    SDL_Color skyBot = {244, 63, 94, 255};    // Coral / Magenta neón en el horizonte
+    // 1. Cielo con gradiente atmosférico continuo (Cenit azul profundo -> Celeste medio -> Bruma cálida en horizonte)
+    SDL_Color skyTop = {45, 105, 185, 255};   // Azul diurno limpio y veraniego
+    SDL_Color skyMid = {120, 185, 235, 255};  // Celeste diurno luminoso
+    SDL_Color skyBot = {214, 234, 248, 255};  // Bruma suave diurna
 
-    int splitY = hY * 55 / 100;
+    int splitY = hY * 58 / 100;
     {
         SDL_Vertex vTop[4] = {
             {{0.0f, 0.0f}, skyTop, {0, 0}},
@@ -218,109 +220,121 @@ void Renderer::renderSky(float carX, float skyScrollX, float horizonY, float rac
         SDL_Vertex vBot[4] = {
             {{0.0f, static_cast<float>(splitY)}, skyMid, {0, 0}},
             {{static_cast<float>(viewW), static_cast<float>(splitY)}, skyMid, {0, 0}},
-            {{static_cast<float>(viewW), static_cast<float>(hY + 20)}, skyBot, {0, 0}},
-            {{0.0f, static_cast<float>(hY + 20)}, skyBot, {0, 0}}
+            {{static_cast<float>(viewW), static_cast<float>(hY + 25)}, skyBot, {0, 0}},
+            {{0.0f, static_cast<float>(hY + 25)}, skyBot, {0, 0}}
         };
         int idx[6] = {0, 1, 2, 0, 2, 3};
         SDL_RenderGeometry(ren_, nullptr, vTop, 4, idx, 6);
         SDL_RenderGeometry(ren_, nullptr, vBot, 4, idx, 6);
     }
 
-    // 2. Sol Retro-Arcade Masivo con franjas horizontales animadas (Sin saltos bruscos)
-    int sunX = (viewW / 2) - static_cast<int>(skyScrollX * 0.35f);
-    sunX = ((sunX % 2400) + 2400) % 2400 - 240;
-    int sunY = hY - 95;
-    int sunR = 145;
+    auto wrap = [](float v, float period) {
+        float r = std::fmod(v, period);
+        return (r < 0.0f) ? r + period : r;
+    };
 
-    // Halo exterior cálido
+    // 2. Sol sereno en cuadrante superior derecho (estable, sin quedar cortado por el retrovisor)
     SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
-    drawNeobrutalCircle(sunX, sunY, sunR + 28, {251, 113, 133, 65}, 0, 0);
-    // Cuerpo del sol neobrutalista
-    drawNeobrutalCircle(sunX, sunY, sunR, {253, 224, 71, 255}, 6, 8);
+    float sunPan = skyScrollX * 0.02f;
+    int sunX = static_cast<int>(wrap(viewW * 0.78f - sunPan, static_cast<float>(viewW + 500))) - 250;
+    int sunY = hY - 240;
+    // Halo cálido difuso
+    drawNeobrutalCircle(sunX, sunY, 115, {255, 244, 200, 45}, 0, 0);
+    drawNeobrutalCircle(sunX, sunY, 72,  {255, 248, 210, 95}, 0, 0);
+    // Núcleo solar luminoso
+    drawNeobrutalCircle(sunX, sunY, 45,  {255, 248, 175, 255}, 0, 0);
 
-    // Recortes horizontales synthwave en la mitad inferior del sol
-    for (int s = 0; s < 6; ++s) {
-        int bandY = sunY + 15 + s * 20;
-        int bandH = 4 + s * 2;
-        if (bandY < hY) {
-            int dy = bandY - sunY;
-            int chordW = static_cast<int>(std::sqrt(std::max(0, sunR * sunR - dy * dy)));
-            SDL_Rect cutR = {sunX - chordW + 4, bandY, (chordW - 4) * 2, bandH};
-            SDL_SetRenderDrawColor(ren_, 244, 63, 94, 255);
-            SDL_RenderFillRect(ren_, &cutR);
-        }
+    // 3. Nubes orgánicas redondeadas (sin bloques rectangulares ni glitches bajo el retrovisor)
+    for (int c = 0; c < 4; ++c) {
+        float base = c * 750.0f + raceTime * 4.5f - skyScrollX * 0.04f;
+        int cx = static_cast<int>(wrap(base, 3000.0f)) - 350;
+        int cy = 60 + (c % 3) * 45;
+        // Dibujar cúmulo algodonoso suave mediante círculos superpuestos
+        drawNeobrutalCircle(cx, cy, 38, {255, 255, 255, 200}, 0, 0);
+        drawNeobrutalCircle(cx - 32, cy + 8, 26, {255, 255, 255, 185}, 0, 0);
+        drawNeobrutalCircle(cx + 36, cy + 6, 28, {255, 255, 255, 185}, 0, 0);
+        drawNeobrutalCircle(cx + 18, cy - 10, 30, {255, 255, 255, 215}, 0, 0);
+        // Base horizontal suave que le da aspecto de cúmulo natural
+        drawNeobrutalRect(cx - 35, cy + 8, 75, 16, {255, 255, 255, 180}, 0, 0);
     }
 
-    // 3. Nubes estilizadas en movimiento lento
-    for (int c = 0; c < 6; ++c) {
-        float cloudBase = c * 420.0f + raceTime * (18.0f + c * 4.0f) - skyScrollX * 0.45f;
-        int cx = static_cast<int>(std::fmod(cloudBase, 2500.0f));
-        if (cx < 0) cx += 2500;
-        cx -= 250;
-        int cy = 110 + (c % 3) * 52;
-        int cw = 150 + (c % 2) * 65;
-        drawNeobrutalRect(cx, cy, cw, 26, {254, 240, 138, 220}, 3, 4);
-        drawNeobrutalRect(cx + 24, cy - 16, cw - 48, 18, {255, 255, 255, 235}, 3, 0);
+    // 4. CORDILLERA LEJANA CONTINUA (Cero saltos, cero morphing, 100% fluidez matemática)
+    // Se muestrea una función continua C-infinito periódica de 3840px a lo largo de toda la pantalla
+    auto getFarHeight = [](float px) {
+        float ang = px * (2.0f * 3.14159265f / 3840.0f);
+        float h = std::sin(ang) * 48.0f 
+                + std::sin(ang * 2.0f + 1.25f) * 32.0f 
+                + std::sin(ang * 4.0f + 0.45f) * 18.0f
+                + std::sin(ang * 8.0f + 2.30f) * 8.0f;
+        return std::max(22.0f, 105.0f + h);
+    };
+
+    const float farStep = 32.0f;
+    float farOffset = skyScrollX * 0.12f;
+    for (float sx = -farStep; sx < viewW + farStep; sx += farStep) {
+        float h1 = getFarHeight(sx + farOffset);
+        float h2 = getFarHeight(sx + farStep + farOffset);
+        int x1 = static_cast<int>(sx);
+        int x2 = static_cast<int>(sx + farStep);
+        int y1 = hY - static_cast<int>(h1);
+        int y2 = hY - static_cast<int>(h2);
+
+        // Quad continuo desde la cresta de la montaña hasta el horizonte
+        SDL_Vertex mv[4] = {
+            {{static_cast<float>(x1), static_cast<float>(y1)}, {135, 168, 202, 255}, {0, 0}},
+            {{static_cast<float>(x2), static_cast<float>(y2)}, {135, 168, 202, 255}, {0, 0}},
+            {{static_cast<float>(x2), static_cast<float>(hY)}, {195, 218, 238, 255}, {0, 0}},
+            {{static_cast<float>(x1), static_cast<float>(hY)}, {195, 218, 238, 255}, {0, 0}}
+        };
+        int mi[6] = {0, 1, 2, 0, 2, 3};
+        SDL_RenderGeometry(ren_, nullptr, mv, 4, mi, 6);
+
+        // Línea sutil de cresta de montaña
+        renderThickLine(x1, y1, x2, y2, 1.8f, {105, 138, 172, 255});
     }
 
-    // 4. Bandada de pájaros animados en el cielo
-    for (int b = 0; b < 5; ++b) {
-        int bx = ((sunX + 260 + b * 48 + static_cast<int>(raceTime * 45.0f)) % (kScreenWidth + 100)) - 50;
-        int by = 155 + (b % 3) * 22 + static_cast<int>(std::sin(raceTime * 6.0f + b) * 6.0f);
-        int wingY = static_cast<int>(std::sin(raceTime * 11.0f + b * 1.4f) * 7.0f);
-        renderThickLine(bx - 10, by + wingY, bx, by, 3.0f, {18, 18, 18, 255});
-        renderThickLine(bx, by, bx + 10, by + wingY, 3.0f, {18, 18, 18, 255});
+    // 5. COLINAS VERDES INTERMEDIAS CONTINUAS (Ondulaciones suaves de circuito)
+    auto getNearHeight = [](float px) {
+        float ang = px * (2.0f * 3.14159265f / 2560.0f);
+        float h = std::sin(ang + 2.10f) * 30.0f
+                + std::sin(ang * 3.0f + 0.80f) * 16.0f
+                + std::sin(ang * 6.0f) * 7.0f;
+        return std::max(12.0f, 48.0f + h);
+    };
+
+    const float nearStep = 28.0f;
+    float nearOffset = skyScrollX * 0.28f;
+    for (float sx = -nearStep; sx < viewW + nearStep; sx += nearStep) {
+        float h1 = getNearHeight(sx + nearOffset);
+        float h2 = getNearHeight(sx + nearStep + nearOffset);
+        int x1 = static_cast<int>(sx);
+        int x2 = static_cast<int>(sx + nearStep);
+        int y1 = hY - static_cast<int>(h1);
+        int y2 = hY - static_cast<int>(h2);
+
+        SDL_Vertex hv[4] = {
+            {{static_cast<float>(x1), static_cast<float>(y1)}, {62, 142, 82, 255}, {0, 0}},
+            {{static_cast<float>(x2), static_cast<float>(y2)}, {62, 142, 82, 255}, {0, 0}},
+            {{static_cast<float>(x2), static_cast<float>(hY)}, {88, 168, 106, 255}, {0, 0}},
+            {{static_cast<float>(x1), static_cast<float>(hY)}, {88, 168, 106, 255}, {0, 0}}
+        };
+        int hi[6] = {0, 1, 2, 0, 2, 3};
+        SDL_RenderGeometry(ren_, nullptr, hv, 4, hi, 6);
+
+        // Borde superior suave de colina
+        renderThickLine(x1, y1, x2, y2, 2.0f, {38, 102, 54, 255});
     }
 
-    // 5. Doble Cordillera de Montañas con Parallax Suave y Sombras de Dos Caras
-    // Capa lejana
-    int farScroll = static_cast<int>(skyScrollX * 0.65f + carX * 45.0f);
-    for (int i = -3; i < 14; ++i) {
-        int mX = i * 240 - ((farScroll % 240 + 240) % 240);
-        int seed = ((i + farScroll / 240) % 5 + 5) % 5;
-        int mH = 135 + seed * 32;
-        int topY = hY - mH;
-
-        renderTriangle(mX, hY, mX + 140, topY, mX + 280, hY,
-                       {49, 46, 129, 255}, {67, 56, 202, 255}, {30, 27, 75, 255});
-        renderThickLine(mX, hY, mX + 140, topY, 4.0f, {18, 18, 18, 255});
-        renderThickLine(mX + 140, topY, mX + 280, hY, 4.0f, {18, 18, 18, 255});
-    }
-
-    // Capa cercana con cara iluminada y cara en sombra + cumbres nevadas
-    int nearScroll = static_cast<int>(skyScrollX * 1.15f + carX * 85.0f);
-    for (int i = -3; i < 16; ++i) {
-        int mX = i * 180 - ((nearScroll % 180 + 180) % 180);
-        int seed = ((i + nearScroll / 180) % 4 + 4) % 4;
-        int mH = 90 + seed * 36;
-        int topY = hY - mH;
-        int peakX = mX + 105;
-
-        // Cara izquierda iluminada por el sol
-        renderTriangle(mX, hY, peakX, topY, peakX, hY,
-                       {99, 102, 241, 255}, {129, 140, 248, 255}, {79, 70, 229, 255});
-        // Cara derecha en sombra profunda
-        renderTriangle(peakX, hY, peakX, topY, mX + 210, hY,
-                       {49, 46, 129, 255}, {55, 48, 163, 255}, {30, 27, 75, 255});
-
-        // Cumbre nevada en los picos más altos
-        if (mH >= 126) {
-            float snowH = mH * 0.32f;
-            float leftSnowX = peakX - (105.0f * 0.32f);
-            float rightSnowX = peakX + (105.0f * 0.32f);
-            renderTriangle(leftSnowX, topY + snowH, peakX, topY, peakX, topY + snowH,
-                           {248, 250, 252, 255}, {255, 255, 255, 255}, {226, 232, 240, 255});
-            renderTriangle(peakX, topY + snowH, peakX, topY, rightSnowX, topY + snowH,
-                           {203, 213, 225, 255}, {226, 232, 240, 255}, {148, 163, 184, 255});
-        }
-
-        // Bordes negros neobrutalistas
-        renderThickLine(mX, hY, peakX, topY, 4.5f, {18, 18, 18, 255});
-        renderThickLine(peakX, topY, mX + 210, hY, 4.5f, {18, 18, 18, 255});
-    }
-
-    // Línea divisoria firme del horizonte
-    renderThickLine(0, hY, viewW, hY, 4.0f, {18, 18, 18, 255});
+    // 6. FRITADO ATMOSFÉRICO DE HORIZONTE (Atmospheric horizon haze)
+    // Elimina la línea dura negra y fusiona con bruma suave el cielo, montañas y césped
+    SDL_Vertex haze[4] = {
+        {{0.0f, static_cast<float>(hY - 6)}, {214, 234, 248, 80}, {0, 0}},
+        {{static_cast<float>(viewW), static_cast<float>(hY - 6)}, {214, 234, 248, 80}, {0, 0}},
+        {{static_cast<float>(viewW), static_cast<float>(hY + 12)}, {214, 234, 248, 210}, {0, 0}},
+        {{0.0f, static_cast<float>(hY + 12)}, {214, 234, 248, 210}, {0, 0}}
+    };
+    int hzIdx[6] = {0, 1, 2, 0, 2, 3};
+    SDL_RenderGeometry(ren_, nullptr, haze, 4, hzIdx, 6);
 }
 
 void Renderer::renderRoad(const Road& road, const Car& car, float horizonY, float camTilt, float raceTime, int viewW, int viewH, const Car* otherCar, SDL_Color otherColor) {
@@ -356,48 +370,44 @@ void Renderer::renderRoad(const Road& road, const Car& car, float horizonY, floa
     // La cámara está montada dentro del auto y debe reflejar la posición exacta del piloto (playerX)
     float playerCamX = playerX;
 
-    // INTERPOLACIÓN SUB-SEGMENTO HERMITE SUAVE:
-    // Evita saltos bruscos cuando el auto pasa de un segmento al siguiente a alta velocidad
-    float smoothPercent = basePercent * basePercent * (3.0f - 2.0f * basePercent);
-    float interpolatedBaseCurve = seg0.curve + (seg1.curve - seg0.curve) * smoothPercent;
-
-    float curX = 0.0f;
-    const float curveScaleFactor = 280.0f; // Calibrado para fluidez y arco natural sin distorsión
-    float ddx = -interpolatedBaseCurve * curveScaleFactor * smoothPercent;
+    // PROYECCIÓN CONTINUA DE CURVATURA ESTILO RETRO-ARCADE CLÁSICO (Test Drive II / OutRun):
+    // La curvatura se acumula suavemente y se atenúa de forma cuadrática y continua hacia el horizonte,
+    // eliminando por completo cualquier umbral brusco (kCurveLookahead fijo) que cause congelamiento o popping.
+    const float kCurveRender = 55.0f;
+    const float kLookaheadMax = 120.0f;
+    float curRelX = 0.0f;
+    // dx inicial continuo considerando la fracción exacta dentro del segmento
+    float curveAtCar = seg0.curve * (1.0f - basePercent) + seg1.curve * basePercent;
+    float ddx = -curveAtCar * basePercent * kCurveRender;
 
     for (int n = 0; n < kDrawDistance; ++n) {
         const RoadSegment& seg = road.getSegment(baseIdx + n);
-        const RoadSegment& nextSeg = road.getSegment(baseIdx + n + 1);
-
-        // Curvatura suavemente interpolada entre segmentos adyacentes
-        float segCurve = seg.curve + (nextSeg.curve - seg.curve) * smoothPercent;
-
         float relZ = (static_cast<float>(n) - basePercent) * Road::kSegmentLength;
-        if (relZ < 1.5f) relZ = 1.5f;
+        if (relZ < 3.2f) relZ = 3.2f;
 
         float scale = kCameraDepth / relZ;
 
-        // Atenuación progresiva de campo cercano (Near-field damping):
-        // En los primeros 6 segmentos (~70m delante del capó) la carretera permanece estable y no pega sacudidas laterales
-        float nearDamping = std::clamp(static_cast<float>(n) / 6.0f, 0.0f, 1.0f);
-        float effectiveCurX = curX * nearDamping;
-
-        // La carretera se proyecta con respecto a la posición física del auto (playerCamX * roadW)
-        float worldX = effectiveCurX - (playerCamX * roadW);
+        // Acumulación suave de curvatura relativa desde el auto hacia adelante
+        float worldX = curRelX - (playerX * roadW);
         float worldY = seg.worldY - cameraH;
 
+        // Proyección en perspectiva pura: sin deformación angular artificial en rectas
         float sx = (viewW * 0.5f) + (scale * worldX);
-        float sy = horizonY - (scale * worldY) + ((sx - viewW * 0.5f) * camTilt);
+        float sy = horizonY - (scale * worldY);
         float sw = scale * roadW;
 
         float distRatio = static_cast<float>(n) / static_cast<float>(kDrawDistance);
-        // Niebla exponencial suave para disolver el horizonte sin cortes ni pop-in
         float fog = std::clamp(std::pow(distRatio, 1.6f), 0.0f, 1.0f);
 
-        projected[n] = {sx, sy, sw, scale, static_cast<float>(viewH), fog, segCurve};
+        projected[n] = {sx, sy, sw, scale, static_cast<float>(viewH), fog, seg.curve};
 
-        curX += ddx;
-        ddx += segCurve * curveScaleFactor;
+        curRelX += ddx;
+        // Atenuación suave progresiva (smooth cosine/quadratic rolloff) hacia el infinito
+        if (n < static_cast<int>(kLookaheadMax)) {
+            float fade = 1.0f - (static_cast<float>(n) / kLookaheadMax);
+            float weight = fade * fade; // Suavizado C1 en el horizonte
+            ddx += seg.curve * kCurveRender * weight;
+        }
     }
 
     // CORRECCIÓN DE BUG DE OCLUSIÓN EN COLINAS (CLIPY BUFFER):
@@ -411,7 +421,7 @@ void Renderer::renderRoad(const Road& road, const Car& car, float horizonY, floa
         }
     }
 
-    SDL_Color fogColor = {244, 63, 94, 255}; // Bruma cálida del horizonte
+    SDL_Color fogColor = {214, 234, 248, 255}; // Bruma clara a juego con el cielo diurno
 
     // 2. Renderizado de polígonos de pista (de atrás hacia adelante, respetando oclusión de crestas)
     for (int n = kDrawDistance - 1; n > 0; --n) {
@@ -524,18 +534,18 @@ void Renderer::renderRoad(const Road& road, const Car& car, float horizonY, floa
         }
 
         // E. Guardarraíles metálicos exteriores en curvas pronunciadas
-        if (std::abs(seg.curve) > 2.2f && n < kDrawDistance - 8) {
+        if (std::abs(seg.curve) > 2.2f && n < kDrawDistance - 10 && (iy1 - iy2) >= 1) {
             float sideSign = (seg.curve > 0.0f) ? -1.0f : 1.0f; // Lado exterior de la curva
-            float gx1 = p1.screenX + sideSign * p1.screenW * 1.24f;
-            float gx2 = p2.screenX + sideSign * p2.screenW * 1.24f;
-            float gh1 = p1.screenW * 0.08f;
-            float gh2 = p2.screenW * 0.08f;
+            float gx1 = p1.screenX + sideSign * p1.screenW * 1.22f;
+            float gx2 = p2.screenX + sideSign * p2.screenW * 1.22f;
+            float gh1 = std::min(40.0f, p1.screenW * 0.08f);
+            float gh2 = std::min(40.0f, p2.screenW * 0.08f);
             SDL_Color railCol = (seg.index % 2 == 0) ? SDL_Color{226, 232, 240, 255} : SDL_Color{148, 163, 184, 255};
-            renderPolygon(static_cast<int>(gx1), static_cast<int>(y1 - gh1 * 0.4f),
-                          static_cast<int>(gx2), static_cast<int>(y2 - gh2 * 0.4f),
-                          static_cast<int>(gx2), static_cast<int>(y2 - gh2),
-                          static_cast<int>(gx1), static_cast<int>(y1 - gh1), railCol);
-            renderThickLine(gx1, y1 - gh1, gx2, y2 - gh2, 2.0f, {18, 18, 18, 255});
+            renderPolygon(static_cast<int>(gx1), static_cast<int>(iy1 - gh1 * 0.4f),
+                          static_cast<int>(gx2), static_cast<int>(iy2 - gh2 * 0.4f),
+                          static_cast<int>(gx2), static_cast<int>(iy2 - gh2),
+                          static_cast<int>(gx1), static_cast<int>(iy1 - gh1), railCol);
+            renderThickLine(gx1, iy1 - gh1, gx2, iy2 - gh2, 2.0f, {18, 18, 18, 255});
         }
     }
 
@@ -619,7 +629,7 @@ void Renderer::renderRoad(const Road& road, const Car& car, float horizonY, floa
         if (p.screenY <= p.clipY + 4.0f && p.screenY > horizonY) {
             for (const auto& prop : seg.props) {
                 int propX = static_cast<int>(p.screenX + prop.offset * p.screenW);
-                renderProp(prop, propX, static_cast<int>(p.screenY), p.screenW, p.clipY, raceTime, seg.index, viewW);
+                renderProp(prop, propX, static_cast<int>(p.screenY), p.screenW, p.clipY, raceTime, seg.index, viewW, p.fog);
             }
         }
 
@@ -633,9 +643,10 @@ void Renderer::renderRoad(const Road& road, const Car& car, float horizonY, floa
     }
 }
 
-void Renderer::renderProp(const RoadProp& prop, int screenX, int screenY, float roadScreenW, float clipY, float raceTime, int segIndex, int viewW) {
+void Renderer::renderProp(const RoadProp& prop, int screenX, int screenY, float roadScreenW, float clipY, float raceTime, int segIndex, int viewW, float fog) {
     // Eliminado el corte artificial "screenY > 690" que hacía desaparecer los árboles antes de llegar al coche
     if (roadScreenW <= 4.0f || screenY > clipY + 8.0f || screenX < -500 || screenX > viewW + 500) return;
+    SDL_Color fogColor = {214, 234, 248, 255};
 
     // Oscilación orgánica de viento para que los árboles tengan vida
     float windSway = std::sin(raceTime * 3.2f + segIndex * 0.7f) * (roadScreenW * 0.025f);
@@ -755,6 +766,51 @@ void Renderer::renderProp(const RoadProp& prop, int screenX, int screenY, float 
         SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
         drawNeobrutalCircle(lampX, lampY, lampR * 2, {253, 224, 71, 65}, 0, 0);
         drawNeobrutalCircle(lampX, lampY, lampR, {254, 240, 138, 255}, 2, 0);
+
+    } else if (prop.type == PropType::GRANDSTAND) {
+        // TRIBUNA ESCALONADA CON PÚBLICO ANIMADO
+        // Se descartan a gran distancia (roadScreenW < 30) para evitar cajas flotantes en el horizonte
+        if (roadScreenW < 30.0f) return;
+        int gW = std::clamp(static_cast<int>(roadScreenW * 1.15f), 10, 1400);
+        int gH = std::clamp(static_cast<int>(roadScreenW * 0.62f), 6, 760);
+        int left = screenX - gW / 2;
+        const int rows = 4;
+        int rowH = std::max(2, gH / (rows + 1));
+
+        // Estructura de gradas (con atenuación suave por bruma de distancia)
+        for (int r = 0; r < rows; ++r) {
+            int ry = screenY - (r + 1) * rowH;
+            SDL_Color baseCol = (r % 2 == 0) ? SDL_Color{148, 163, 184, 255} : SDL_Color{100, 116, 139, 255};
+            SDL_Color rowCol = lerpColor(baseCol, fogColor, fog);
+            drawNeobrutalRect(left, ry, gW, rowH, rowCol, gW > 120 ? 2 : 0, 0);
+
+            // Público: cabezas y torsos de colores que saltan
+            if (roadScreenW > 45.0f) {
+                int personW = std::max(3, rowH / 2);
+                int count = gW / (personW + 3);
+                for (int p = 0; p < count; ++p) {
+                    unsigned h = static_cast<unsigned>(segIndex * 131 + r * 37 + p * 17);
+                    static const SDL_Color shirts[6] = {{239, 68, 68, 255}, {250, 204, 21, 255}, {56, 189, 248, 255},
+                                                        {34, 197, 94, 255}, {244, 63, 94, 255}, {255, 255, 255, 255}};
+                    SDL_Color shirt = lerpColor(shirts[h % 6], fogColor, fog);
+                    float jump = std::max(0.0f, std::sin(raceTime * (6.0f + (h % 4)) + p * 0.9f)) * rowH * 0.25f;
+                    int px = left + 2 + p * (personW + 3);
+                    int py = ry - static_cast<int>(jump);
+                    drawNeobrutalRect(px, py + personW / 2, personW, rowH - personW / 2, shirt, 0, 0);
+                    SDL_Color skinCol = lerpColor({226, 175, 142, 255}, fogColor, fog);
+                    drawNeobrutalRect(px, py - personW / 3, personW, personW, skinCol, 0, 0);
+                }
+            }
+        }
+
+        // Techo con columnas
+        int roofY = screenY - (rows + 1) * rowH - rowH / 2;
+        int colW = std::max(2, gW / 60);
+        SDL_Color colCol = lerpColor({51, 65, 85, 255}, fogColor, fog);
+        drawNeobrutalRect(left + gW / 12, roofY, colW, screenY - roofY, colCol, 0, 0);
+        drawNeobrutalRect(left + gW - gW / 12 - colW, roofY, colW, screenY - roofY, colCol, 0, 0);
+        SDL_Color roofCol = lerpColor({220, 38, 38, 255}, fogColor, fog);
+        drawNeobrutalRect(left - gW / 20, roofY - rowH / 2, gW + gW / 10, std::max(2, rowH / 2), roofCol, gW > 120 ? 3 : 0, 0);
 
     } else if (prop.type == PropType::ROCK) {
         // IMPLEMENTACIÓN DE ROCAS FACETEADAS (Antes faltaban en renderProp)
@@ -1084,8 +1140,8 @@ void Renderer::renderCockpit(const Car& car, const Road& road, float raceTime, i
         float bobAmp = (1.0f + speedRatio * 3.0f) + (car.isOffRoad() ? 5.0f : 0.0f);
 
         // Desplazamiento orgánico del chasis por fuerzas G y suspensión
-        int swayX = static_cast<int>(-car.getRoll() * 3.5f + std::cos(car.getSuspensionBob() * 0.5f) * (bobAmp * 0.5f));
-        int swayY = static_cast<int>( car.getPitch() * 1.4f + std::sin(car.getSuspensionBob()) * bobAmp);
+        int swayX = static_cast<int>(-car.getRoll() * 2.2f + std::cos(car.getSuspensionBob() * 0.5f) * (bobAmp * 0.35f));
+        int swayY = static_cast<int>( car.getPitch() * 1.0f + std::sin(car.getSuspensionBob()) * bobAmp);
 
         // 1. CAPÓ DELANTERO Y LIMPIAPARABRISAS
         int dashY = 355 + swayY;
@@ -1481,9 +1537,8 @@ void Renderer::renderCockpit(const Car& car, const Road& road, float raceTime, i
         float bobAmp = (1.2f + speedRatio * 3.8f) + (car.isOffRoad() ? 6.5f : 0.0f);
 
         // Desplazamiento orgánico de cabina por fuerzas G laterales y cabeceo (cámara sigue la inercia del piloto)
-        float curSegCurve = road.findSegment(car.getTrackZ()).curve;
-        int swayX = static_cast<int>(-car.getRoll() * 5.2f - curSegCurve * 4.5f + std::cos(car.getSuspensionBob() * 0.5f) * (bobAmp * 0.6f));
-        int swayY = static_cast<int>( car.getPitch() * 1.6f + std::sin(car.getSuspensionBob()) * bobAmp);
+        int swayX = static_cast<int>(-car.getRoll() * 2.2f + std::cos(car.getSuspensionBob() * 0.5f) * (bobAmp * 0.35f));
+        int swayY = static_cast<int>( car.getPitch() * 1.0f + std::sin(car.getSuspensionBob()) * bobAmp);
 
         // 0. CAPÓ EXTERIOR VISIBLE A TRAVÉS DEL PARABRISAS
         int hoodY = 645 + swayY;
@@ -1966,9 +2021,19 @@ void Renderer::renderPlayerView(const Road& road, const Car& car, float raceTime
     // Amortiguación elástica de alta frecuencia (suavizado cinematográfico)
     smoothedCurve_ += (avgCurve - smoothedCurve_) * 0.075f;
 
-    // Desplazamiento orgánico del fondo (montañas y sol con paralaje suave)
+    // GIRO CONTINUO DEL FONDO: el paisaje rota según el cambio real de rumbo
+    // (curvatura bajo el auto × distancia recorrida). Sin retardo, así la curva no se
+    // siente "congelada" y el fondo nunca se mueve si el auto está detenido.
+    int pIdx = std::clamp(playerNum, 0, 2);
+    float dz = car.getTrackZ() - lastTrackZ_[pIdx];
+    if (dz < 0.0f || dz > 60.0f) dz = 0.0f; // vuelta completa / reinicio
+    lastTrackZ_[pIdx] = car.getTrackZ();
+    float segT = car.getTrackZ() / Road::kSegmentLength - baseSeg;
+    float curveHere = road.getSegment(baseSeg).curve * (1.0f - segT) + road.getSegment(baseSeg + 1).curve * segT;
+    skyPan_[pIdx] += curveHere * dz * 0.28f;
+    skyParallaxX_ = skyPan_[pIdx];
     float speedRatio = car.getSpeedRatio();
-    skyParallaxX_ += smoothedCurve_ * speedRatio * 1.85f;
+    (void)speedRatio;
 
     // Inclinación dinámica de cámara suave en curvas (G-force lateral)
     float targetCamTilt = car.getRoll() * 0.0055f;

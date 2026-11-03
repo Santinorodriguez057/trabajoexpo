@@ -9,6 +9,7 @@
 
 enum class GameState {
     CALIBRATION,
+    COUNTDOWN,
     RACING,
     CHECKPOINT_BONUS,
     FINISH,
@@ -19,8 +20,10 @@ enum class GameState {
 class UserInterface {
 public:
     UserInterface(Renderer& renderer, TTF_Font* fontTitle, TTF_Font* fontHud, TTF_Font* fontSmall, DrivingConfig& config);
+    ~UserInterface();
 
     void renderCalibration(const InputState& input, int playerNum = 1, bool isSplit = false);
+    void renderCountdown(float countdownTimer);
     void renderHud(const Car& car, float timeRemaining, int checkpointNum, float bonusBannerTimer, bool isSplit = false, int playerNum = 1, float rivalGap = 0.0f);
     void renderTimeAttackHud(const Car& car, const Road& road, int currentLap, int totalLaps, float currentLapTime, float bestLapTime, float lastLapTime, int currentSector, float sectorDelta, float sectorBannerTimer);
     void renderMinimap(const Road& road, float playerZ, int currentSector, int mapX, int mapY, int mapW, int mapH);
@@ -29,9 +32,13 @@ public:
     void renderPause(int selectedIndex);
 
 private:
+    void renderDualShockDiagram(int cx, int cy, float tiltAngleDeg, bool isSplit);
+
     Renderer& renderer_;
     TTF_Font* fontTitle_;
     TTF_Font* fontHud_;
     TTF_Font* fontSmall_;
     DrivingConfig& config_;
+
+    SDL_Texture* controllerTex_ = nullptr;
 };

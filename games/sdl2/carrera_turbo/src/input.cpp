@@ -116,15 +116,44 @@ void InputManager::calibrate() {
     const float kFixedCenterAngle = 2.999f;
 
     if (controller_ && hasAccel_) {
-        float accel[3] = {0, 0, -9.8f};
-        SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_ACCEL, accel, 3);
-        // Si el mando está conectado, usar el ángulo en el plano X-Z
-        calibratedRoll_ = std::atan2(accel[2], accel[0]);
-        currentRoll_ = calibratedRoll_;
+        // CALIBRACIÓN PROMEDIADA: se toman ~25 lecturas durante ~0.25s y se promedia el
+        // vector de gravedad. Si el mando se movió durante la toma (mucha dispersión),
+        // se conserva el centro anterior para no dejar el volante torcido.
+        const int kSamples = 25;
+        float sumX = 0.0f, sumZ = 0.0f;
+        float firstAng = 0.0f;
+        float minAng = 0.0f, maxAng = 0.0f; // Desvío relativo a la primera lectura (seguro ante el salto ±π)
+        int valid = 0;
+        for (int i = 0; i < kSamples; ++i) {
+            SDL_PumpEvents();
+            SDL_GameControllerUpdate();
+            float accel[3] = {0, 0, -9.8f};
+            if (SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_ACCEL, accel, 3) == 0) {
+                sumX += accel[0];
+                sumZ += accel[2];
+                float a = std::atan2(accel[2], accel[0]);
+                if (valid == 0) firstAng = a;
+                float d = a - firstAng;
+                while (d > 3.14159265f) d -= 6.2831853f;
+                while (d < -3.14159265f) d += 6.2831853f;
+                minAng = std::min(minAng, d);
+                maxAng = std::max(maxAng, d);
+                ++valid;
+            }
+            SDL_Delay(10);
+        }
+        bool stable = valid >= kSamples / 2 && (maxAng - minAng) < 0.12f; // < ~7° de dispersión
+        if (stable) {
+            calibratedRoll_ = std::atan2(sumZ, sumX);
+        } else if (!state_.calibrated) {
+            calibratedRoll_ = (valid > 0) ? std::atan2(sumZ, sumX) : kFixedCenterAngle;
+        }
+        // Si no fue estable y ya había calibración previa, se mantiene calibratedRoll_ anterior
     } else {
         calibratedRoll_ = kFixedCenterAngle;
-        currentRoll_ = calibratedRoll_;
     }
+    currentRoll_ = 0.0f; // El ángulo filtrado es relativo al centro
+    pedalHoldTimer_ = 0.0f;
     targetSteering_ = 0.0f;
     state_.steering = 0.0f;
     state_.calibrated = true;
@@ -237,35 +266,73 @@ void InputManager::update(float dt) {
     float brakeInput = 0.0f;
     bool handbrakeInput = keySpace_;
 
-    // 1. Control con Giroscopio / Acelerómetro del DualShock (Modo Volante Físico)
-    if (controller_ && hasGyro_ && hasAccel_) {
-        float gyro[3] = {0, 0, 0};
-        float accel[3] = {0, 0, -9.8f};
-        SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_GYRO, gyro, 3);
-        SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_ACCEL, accel, 3);
+    // 1. Control con Mando DualShock / Arcade
+    if (controller_) {
+        // RECALIBRACIÓN EN CARRERA: R3 (click del stick derecho) o touchpad centran el volante
+        bool recalBtn = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_RIGHTSTICK) != 0;
+#if SDL_VERSION_ATLEAST(2, 0, 14)
+        recalBtn = recalBtn || SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_TOUCHPAD) != 0;
+#endif
+        if (recalBtn && !prevRecalBtn_ && hasAccel_) calibrate();
+        prevRecalBtn_ = recalBtn;
+        if (hasGyro_ && hasAccel_) {
+            float gyro[3] = {0, 0, 0};
+            float accel[3] = {0, 0, -9.8f};
+            SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_GYRO, gyro, 3);
+            SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_ACCEL, accel, 3);
 
-        // Ángulo absoluto de inclinación física del volante en el plano X-Z
-        // Medio: Accel X = -9.67, Accel Z = 1.39 -> atan2(1.39, -9.67) = 2.999f (171.8°)
-        // Izq:   Accel X = +10.08, Accel Z = -0.67 -> atan2(-0.67, 10.08) = -0.066f (-3.8°) -> Delta = -175.6°
-        // Der:   Accel X = +0.14, Accel Z = -8.87 -> atan2(-8.87, 0.14) = -1.555f (-89.1°) -> Delta = +99.1°
-        float angleFromAccel = std::atan2(accel[2], accel[0]);
-        float deltaAngle = angleFromAccel - calibratedRoll_;
-        while (deltaAngle > 3.14159265f) deltaAngle -= 2.0f * 3.14159265f;
-        while (deltaAngle < -3.14159265f) deltaAngle += 2.0f * 3.14159265f;
+            // Ángulo absoluto de inclinación física del volante en el plano X-Z
+            // Medio: Accel X = -9.67, Accel Z = 1.39 -> atan2(1.39, -9.67) = 2.999f (171.8°)
+            float angleFromAccel = std::atan2(accel[2], accel[0]);
+            float deltaAngle = angleFromAccel - calibratedRoll_;
+            while (deltaAngle > 3.14159265f) deltaAngle -= 2.0f * 3.14159265f;
+            while (deltaAngle < -3.14159265f) deltaAngle += 2.0f * 3.14159265f;
 
-        // Fusión complementaria con el giroscopio para 0 latencia, estabilidad total y cero deriva
-        // gyro[1] corresponde a la velocidad angular alrededor del eje de giro del volante
-        currentRoll_ = 0.88f * (currentRoll_ - gyro[1] * dt) - 0.12f * deltaAngle;
+            // La medición directa del acelerómetro terrestre da el ángulo real y absoluto sin deriva
+            float targetAngle = -deltaAngle;
 
-        // Inclinación física real del volante en grados para visualización del cockpit
-        state_.physicalAngleDeg = currentRoll_ * 57.2957795f;
+            // ANTI-LATIGAZO AL FRENAR / ACELERAR:
+            // Al apretar L1/L2 el dedo empuja el mando: (a) gira un poco (pico en el gyro) y
+            // (b) lo sacude (pico en el acelerómetro que falsea el ángulo). Se protege así:
+            //  1. Si la aceleración total se aleja de 1g, el mando se está sacudiendo: no se usa el acelerómetro.
+            //  2. Durante 0.30s tras presionar/soltar un gatillo, el ángulo queda congelado.
+            //  3. Mientras se frena, el volante responde con un filtro más suave.
+            bool l1Now = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_LEFTSHOULDER) != 0;
+            bool l2Now = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 600;
+            if (l1Now != prevL1_ || l2Now != prevL2_) pedalHoldTimer_ = 0.30f;
+            prevL1_ = l1Now;
+            prevL2_ = l2Now;
 
-        // Zona muerta central para evitar temblores al ir recto
-        float filteredRoll = applyDeadzone(currentRoll_, config_.deadzone);
+            float accelMag = std::sqrt(accel[0] * accel[0] + accel[1] * accel[1] + accel[2] * accel[2]);
+            bool shaking = std::abs(accelMag - 9.81f) > 1.2f;
 
-        // Giro completo (~1.2 radianes / ~70 grados de recorrido del volante)
-        const float kMaxWheelAngle = 1.25f;
-        steerInput = (filteredRoll / kMaxWheelAngle) * config_.steeringSensitivity;
+            if (pedalHoldTimer_ > 0.0f) {
+                pedalHoldTimer_ -= dt; // Ángulo congelado: se ignora el tirón del dedo
+            } else {
+                float gyroRate = (std::abs(gyro[1]) < 0.35f) ? 0.0f : gyro[1];
+                float accelWeight = shaking ? 0.0f : 0.20f;
+                float fused = (1.0f - accelWeight) * (currentRoll_ - gyroRate * dt) + accelWeight * targetAngle;
+                float follow = l1Now ? 0.35f : 1.0f; // Frenando: respuesta más suave
+                currentRoll_ += (fused - currentRoll_) * follow;
+            }
+
+            // Inclinación física real del volante en grados para visualización del cockpit
+            state_.physicalAngleDeg = currentRoll_ * 57.2957795f;
+
+            // Zona muerta central para evitar temblores al ir recto
+            float filteredRoll = applyDeadzone(currentRoll_, std::max(config_.deadzone, 0.07f));
+
+            // Giro completo (~0.90 radianes / ~52 grados de recorrido del volante)
+            const float kMaxWheelAngle = 0.90f;
+            steerInput = (filteredRoll / kMaxWheelAngle) * config_.steeringSensitivity;
+        } else {
+            // Mando convencional sin sensores de movimiento: control con stick analógico
+            Sint16 stickX = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_LEFTX);
+            if (std::abs(stickX) > 4500) {
+                steerInput = (stickX / 32767.0f) * config_.steeringSensitivity;
+                state_.physicalAngleDeg = steerInput * 65.0f;
+            }
+        }
 
         // Mapeo ergonómico: L2 = Acelerador, L1 = Freno (Mano izquierda en el mando, mano derecha en la palanca de cambios)
         Sint16 rawL2 = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
@@ -287,12 +354,6 @@ void InputManager::update(float dt) {
         // Botón Cuadrado o X para freno de mano / derrape
         if (SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_X)) {
             handbrakeInput = true;
-        }
-
-        // Stick izquierdo como ajuste o fallback
-        Sint16 stickX = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_LEFTX);
-        if (std::abs(stickX) > 6000) {
-            steerInput += (stickX / 32767.0f) * config_.steeringSensitivity;
         }
     }
 

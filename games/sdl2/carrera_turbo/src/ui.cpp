@@ -5,57 +5,203 @@
 
 UserInterface::UserInterface(Renderer& renderer, TTF_Font* fontTitle, TTF_Font* fontHud, TTF_Font* fontSmall, DrivingConfig& config)
     : renderer_(renderer), fontTitle_(fontTitle), fontHud_(fontHud), fontSmall_(fontSmall), config_(config) {
+    // Carga de la imagen del mando DualShock 4 transparente (sin fondo)
+    const char* possiblePaths[] = {
+        "assets/dualshock4.bmp",
+        "../assets/dualshock4.bmp",
+        "../../assets/dualshock4.bmp",
+        "/home/santino/proyectos/trabajo expo/assets/dualshock4.bmp"
+    };
+    for (const char* p : possiblePaths) {
+        SDL_Surface* surf = SDL_LoadBMP(p);
+        if (surf) {
+            controllerTex_ = SDL_CreateTextureFromSurface(renderer_.getRenderer(), surf);
+            SDL_FreeSurface(surf);
+            if (controllerTex_) {
+                SDL_SetTextureBlendMode(controllerTex_, SDL_BLENDMODE_BLEND);
+                break;
+            }
+        }
+    }
+}
+
+UserInterface::~UserInterface() {
+    if (controllerTex_) {
+        SDL_DestroyTexture(controllerTex_);
+        controllerTex_ = nullptr;
+    }
+}
+
+void UserInterface::renderDualShockDiagram(int cx, int cy, float tiltAngleDeg, bool isSplit) {
+    float scale = isSplit ? 0.20f : 0.26f;
+
+    // Si la imagen del DualShock 4 está cargada, la renderizamos con rotación analógica fluida en vivo
+    if (controllerTex_) {
+        int origW = 986;
+        int origH = 680;
+        int dstW = static_cast<int>(origW * scale);
+        int dstH = static_cast<int>(origH * scale);
+
+        SDL_Rect dstRect = {
+            cx - dstW / 2,
+            cy - dstH / 2,
+            dstW,
+            dstH
+        };
+
+        // Renderizado del mando rotando de lado a lado con su ángulo real
+        SDL_RenderCopyEx(renderer_.getRenderer(), controllerTex_, nullptr, &dstRect,
+                         static_cast<double>(tiltAngleDeg), nullptr, SDL_FLIP_NONE);
+    }
 }
 
 void UserInterface::renderCalibration(const InputState& input, int playerNum, bool isSplit) {
-    int modalW = isSplit ? 980 : 1200;
-    int modalH = isSplit ? 460 : 740;
+    int modalW = isSplit ? 1040 : 1380;
+    int modalH = isSplit ? 480 : 760;
     int modalX = 960 - modalW / 2;
-    int modalY = isSplit ? (playerNum == 1 ? 40 : 580) : (540 - modalH / 2);
+    int modalY = isSplit ? (playerNum == 1 ? 30 : 560) : (540 - modalH / 2);
 
     renderer_.drawNeobrutalRect(modalX, modalY, modalW, modalH, {255, 255, 255, 255}, 5, 8);
 
     // Cabecera Neobrutalista
     SDL_Color headerCol = (playerNum == 1) ? SDL_Color{56, 189, 248, 255} : SDL_Color{244, 63, 94, 255};
     renderer_.drawNeobrutalRect(modalX + 30, modalY - 24, modalW - 60, isSplit ? 54 : 75, headerCol, 4, 6);
-    std::string title = isSplit ? ("CALIBRACIÓN VOLANTE - JUGADOR " + std::to_string(playerNum)) : "CALIBRACIÓN DEL VOLANTE DUALSHOCK";
+    std::string title = isSplit ? ("CALIBRACIÓN VOLANTE - JUGADOR " + std::to_string(playerNum)) : "CALIBRACIÓN Y CONTROL DEL MANDO DUALSHOCK";
     renderer_.drawText(isSplit ? fontHud_ : fontTitle_, title, 960, modalY - (isSplit ? 18 : 22), {18, 18, 18, 255}, true);
 
     // Instrucciones
     if (!isSplit) {
-        renderer_.drawText(fontHud_, "Mano Izquierda: Sostén el mando | [L2] Acelerar • [L1] Frenar", 960, modalY + 80, {24, 24, 27, 255}, true);
-        renderer_.drawText(fontSmall_, "Mano Derecha: Palanca de Cambios secuencial • Inclina para girar.", 960, modalY + 130, {75, 85, 99, 255}, true);
+        renderer_.drawText(fontHud_, "Mano Izquierda: Sujeta el mando | [L2] Acelerar • [L1] Frenar", 960, modalY + 75, {24, 24, 27, 255}, true);
+        renderer_.drawText(fontSmall_, "Gira el mando de lado a lado como un volante • Mano Derecha en palanca de cambios secuencial.", 960, modalY + 120, {75, 85, 99, 255}, true);
     }
 
-    // Cuadro interactivo con volante girando en vivo
-    int previewBoxW = isSplit ? 340 : 440;
-    int previewBoxH = isSplit ? 180 : 260;
-    int previewBoxX = 960 - previewBoxW / 2;
-    int previewBoxY = isSplit ? modalY + 48 : modalY + 180;
-    renderer_.drawNeobrutalRect(previewBoxX, previewBoxY, previewBoxW, previewBoxH, {30, 41, 59, 255}, 4, 6);
+    // Panel Doble Lado a Lado (Modelo de Mando 3D + Volante Virtual Interactivo)
+    int boxW = isSplit ? 480 : 580;
+    int boxH = isSplit ? 230 : 340;
+    int boxY = isSplit ? (modalY + 48) : (modalY + 160);
 
-    // Volante miniatura interactivo
-    int pWheelRadius = isSplit ? 52 : 75;
-    int pWheelCenterY = previewBoxY + previewBoxH / 2 + 10;
-    renderer_.drawNeobrutalCircle(960, pWheelCenterY, pWheelRadius, {18, 18, 18, 255}, 4, 3);
-    renderer_.drawNeobrutalCircle(960, pWheelCenterY, pWheelRadius - 16, {30, 41, 59, 255}, 2, 0);
-    renderer_.drawNeobrutalCircle(960, pWheelCenterY, 18, {244, 63, 94, 255}, 2, 0);
+    // 1. CUADRO IZQUIERDO: MODELO DUALSHOCK EXPLICATIVO
+    int ctrlBoxX = 960 - boxW - (isSplit ? 15 : 25);
+    renderer_.drawNeobrutalRect(ctrlBoxX, boxY, boxW, boxH, {245, 247, 250, 255}, 4, 6);
+    // Título de sección
+    renderer_.drawNeobrutalRect(ctrlBoxX + 20, boxY - 14, boxW - 40, 28, {56, 189, 248, 255}, 2, 0);
+    renderer_.drawText(fontSmall_, "MANDO: INCLINA DE LADO A LADO", ctrlBoxX + boxW / 2, boxY - 10, {18, 18, 18, 255}, true);
 
-    // Franja indicadora superior rotada
+    // Diagrama animado de DualShock con inclinación en vivo
+    int ctrlCenterX = ctrlBoxX + boxW / 2;
+    int ctrlCenterY = boxY + boxH / 2 + (isSplit ? 8 : 12);
+    renderDualShockDiagram(ctrlCenterX, ctrlCenterY, input.physicalAngleDeg, isSplit);
+
+    // Leyenda inferior explicativa del movimiento lateral
+    renderer_.drawText(fontSmall_, "« INCLINAR IZQ.        •        INCLINAR DER. »", ctrlCenterX, boxY + boxH - (isSplit ? 22 : 30), {100, 116, 139, 255}, true);
+
+    // 2. CUADRO DERECHO: VOLANTE TELEMETRÍA EN VIVO
+    int wheelBoxX = 960 + (isSplit ? 15 : 25);
+    renderer_.drawNeobrutalRect(wheelBoxX, boxY, boxW, boxH, {30, 41, 59, 255}, 4, 6);
+    renderer_.drawNeobrutalRect(wheelBoxX + 20, boxY - 14, boxW - 40, 28, {250, 204, 21, 255}, 2, 0);
+    renderer_.drawText(fontSmall_, "RESPUESTA VIRTUAL DEL VOLANTE", wheelBoxX + boxW / 2, boxY - 10, {18, 18, 18, 255}, true);
+
+    int wheelCenterX = wheelBoxX + boxW / 2;
+    int pWheelRadius = isSplit ? 60 : 88;
+    int pWheelCenterY = boxY + boxH / 2 + 10;
+    renderer_.drawNeobrutalCircle(wheelCenterX, pWheelCenterY, pWheelRadius, {18, 18, 18, 255}, 4, 3);
+    renderer_.drawNeobrutalCircle(wheelCenterX, pWheelCenterY, pWheelRadius - (isSplit ? 14 : 20), {30, 41, 59, 255}, 2, 0);
+
+    // Marca de centro fija de referencia a las 12 en punto (arriba / 0°)
+    renderer_.drawNeobrutalRect(wheelCenterX - 3, pWheelCenterY - pWheelRadius - 10, 6, 12, {239, 68, 68, 255}, 1, 0);
+
+    // Radios del volante rotados con el ángulo físico
     float rad = input.physicalAngleDeg * 0.0174532925f - 1.57079f;
-    int tapeX = 960 + static_cast<int>(std::cos(rad) * (pWheelRadius - 8));
-    int tapeY = pWheelCenterY + static_cast<int>(std::sin(rad) * (pWheelRadius - 8));
-    renderer_.drawNeobrutalCircle(tapeX, tapeY, 8, {250, 204, 21, 255}, 2, 0);
+    float steerRot = input.physicalAngleDeg * 0.0174532925f;
+    float spokeAngles[3] = {3.14159f + steerRot, 0.0f + steerRot, 1.57079f + steerRot};
+    for (int s = 0; s < 3; ++s) {
+        int sx = wheelCenterX + static_cast<int>(std::cos(spokeAngles[s]) * (pWheelRadius - 10));
+        int sy = pWheelCenterY + static_cast<int>(std::sin(spokeAngles[s]) * (pWheelRadius - 10));
+        renderer_.renderThickLine(wheelCenterX, pWheelCenterY, sx, sy, isSplit ? 4.0f : 6.0f, {205, 210, 218, 255});
+    }
 
-    // Telemetría en vivo
+    // Núcleo central
+    renderer_.drawNeobrutalCircle(wheelCenterX, pWheelCenterY, isSplit ? 16 : 24, {244, 63, 94, 255}, 2, 0);
+
+    // Franja indicadora superior rotada en el aro
+    int tapeX = wheelCenterX + static_cast<int>(std::cos(rad) * (pWheelRadius - 8));
+    int tapeY = pWheelCenterY + static_cast<int>(std::sin(rad) * (pWheelRadius - 8));
+    renderer_.drawNeobrutalCircle(tapeX, tapeY, isSplit ? 7 : 9, {250, 204, 21, 255}, 2, 0);
+
+    // Telemetría de ángulo
     char angBuf[64];
-    std::snprintf(angBuf, sizeof(angBuf), "ÁNGULO DEL VOLANTE: %+.1f°", input.physicalAngleDeg);
-    renderer_.drawText(fontSmall_, angBuf, 960, previewBoxY + 12, {250, 204, 21, 255}, true);
+    std::snprintf(angBuf, sizeof(angBuf), "GIRO DETECTADO: %+.1f°", input.physicalAngleDeg);
+    renderer_.drawText(fontSmall_, angBuf, wheelCenterX, boxY + boxH - (isSplit ? 22 : 30), {250, 204, 21, 255}, true);
 
     // Botón de confirmación
-    int btnY = isSplit ? (modalY + modalH - 50) : (modalY + modalH - 55);
-    renderer_.drawNeobrutalRect(960 - 240, btnY, 480, isSplit ? 45 : 65, {34, 197, 94, 255}, 4, 6);
-    renderer_.drawText(isSplit ? fontSmall_ : fontHud_, "PRESIONA [X] O [ENTER] PARA COMENZAR", 960, btnY + (isSplit ? 10 : 15), {18, 18, 18, 255}, true);
+    int btnY = isSplit ? (modalY + modalH - 52) : (modalY + modalH - 68);
+    renderer_.drawNeobrutalRect(960 - 280, btnY, 560, isSplit ? 45 : 55, {34, 197, 94, 255}, 4, 6);
+    renderer_.drawText(isSplit ? fontSmall_ : fontHud_, "SITUAR AL CENTRO Y PRESIONAR [X] O [ENTER]", 960, btnY + (isSplit ? 10 : 13), {18, 18, 18, 255}, true);
+}
+
+void UserInterface::renderCountdown(float countdownTimer) {
+    // Semáforo Neobrutalista estilo Fórmula 1 en el centro de la pantalla
+    // Secuencia de 4 segundos:
+    // 3.0s a 4.0s: Semáforo 1 luz roja encendida
+    // 2.0s a 3.0s: Semáforo 2 luces rojas encendidas
+    // 1.0s a 2.0s: Semáforo 3 luces rojas encendidas
+    // 0.0s a 1.0s: Semáforo en VERDE completo ("¡YA! / ¡GO!")
+    if (countdownTimer < 0.0f) return;
+
+    int boxW = 520;
+    int boxH = 140;
+    int boxX = 960 - boxW / 2;
+    int boxY = 180;
+
+    // Caja negra del semáforo con borde blanco / neobrutalista
+    renderer_.drawNeobrutalRect(boxX, boxY, boxW, boxH, {18, 20, 26, 250}, 4, 8);
+
+    // 5 Luces estilo F1
+    int numLights = 5;
+    int lightR = 28;
+    int lightSpacing = 95;
+    int startLightX = 960 - ((numLights - 1) * lightSpacing) / 2;
+    int lightY = boxY + 50;
+
+    bool isGo = (countdownTimer <= 1.0f);
+    int activeReds = 0;
+    if (!isGo) {
+        if (countdownTimer > 3.0f) activeReds = 2;
+        else if (countdownTimer > 2.0f) activeReds = 4;
+        else activeReds = 5;
+    }
+
+    for (int i = 0; i < numLights; ++i) {
+        int lx = startLightX + i * lightSpacing;
+        // Borde exterior metálico
+        renderer_.drawNeobrutalCircle(lx, lightY, lightR, {15, 23, 42, 255}, 3, 0);
+
+        if (isGo) {
+            // Todas las luces verdes brillantes al apagarse el rojo
+            renderer_.drawNeobrutalCircle(lx, lightY, lightR - 4, {34, 197, 94, 255}, 0, 0);
+            renderer_.drawNeobrutalCircle(lx, lightY, lightR / 2, {187, 247, 208, 255}, 0, 0); // Brillo
+        } else {
+            bool lit = (i < activeReds);
+            if (lit) {
+                // Luz roja encendida
+                renderer_.drawNeobrutalCircle(lx, lightY, lightR - 4, {239, 68, 68, 255}, 0, 0);
+                renderer_.drawNeobrutalCircle(lx, lightY, lightR / 2, {254, 202, 202, 255}, 0, 0);
+            } else {
+                // Luz apagada
+                renderer_.drawNeobrutalCircle(lx, lightY, lightR - 4, {45, 20, 24, 255}, 0, 0);
+            }
+        }
+    }
+
+    // Texto dinámico inferior
+    if (isGo) {
+        renderer_.drawText(fontTitle_, "¡ ¡  V A M O S  ! !", 960, boxY + 95, {34, 197, 94, 255}, true);
+    } else {
+        int secDisplay = static_cast<int>(std::ceil(countdownTimer - 1.0f));
+        char cBuf[32];
+        std::snprintf(cBuf, sizeof(cBuf), "PREPARADOS... %d", std::max(1, secDisplay));
+        renderer_.drawText(fontHud_, cBuf, 960, boxY + 95, {250, 204, 21, 255}, true);
+    }
 }
 
 void UserInterface::renderHud(const Car& car, float timeRemaining, int checkpointNum, float bonusBannerTimer, bool isSplit, int playerNum, float rivalGap) {
@@ -136,15 +282,21 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
     // HUD NEOBRUTALISTA DE VUELTA RÁPIDA / TIME ATTACK (F1 / Gran Turismo Style)
     // =========================================================================
 
-    // 1. Contador de Vuelta (Lap 1 / 3) - Esquina Superior Izquierda
-    int lapBoxW = 220;
+    // 1. Contador de Vuelta - Esquina Superior Izquierda
+    // Vuelta 1: Reconocimiento (Warmup) | Vuelta 2: Vuelta Rápida Oficial Cronometrada
+    bool isRecon = (currentLap == 1);
+    int lapBoxW = isRecon ? 360 : 320;
     int lapBoxH = 70;
     int lapBoxX = 50;
     int lapBoxY = 35;
-    renderer_.drawNeobrutalRect(lapBoxX, lapBoxY, lapBoxW, lapBoxH, {250, 204, 21, 255}, 4, 6);
-    char lapBuf[32];
-    std::snprintf(lapBuf, sizeof(lapBuf), "LAP %d / %d", std::min(currentLap, totalLaps), totalLaps);
-    renderer_.drawText(fontTitle_, lapBuf, lapBoxX + lapBoxW / 2, lapBoxY + 12, {18, 18, 18, 255}, true);
+    SDL_Color lapBadgeCol = isRecon ? SDL_Color{56, 189, 248, 255} : SDL_Color{250, 204, 21, 255};
+    renderer_.drawNeobrutalRect(lapBoxX, lapBoxY, lapBoxW, lapBoxH, lapBadgeCol, 4, 6);
+    
+    if (isRecon) {
+        renderer_.drawText(fontHud_, "V.1: RECONOCIMIENTO", lapBoxX + lapBoxW / 2, lapBoxY + 18, {18, 18, 18, 255}, true);
+    } else {
+        renderer_.drawText(fontHud_, "V.2: CRONOMETRADA", lapBoxX + lapBoxW / 2, lapBoxY + 18, {18, 18, 18, 255}, true);
+    }
 
     // 2. Cronómetro de Vuelta Actual (Centro Superior)
     int timeBoxW = 340;
@@ -160,8 +312,10 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
     renderer_.drawText(fontTitle_, timeStr, 960, timeBoxY + 14, {24, 24, 27, 255}, true);
 
     // Etiqueta superior sobre la caja
-    renderer_.drawNeobrutalRect(960 - 70, timeBoxY - 14, 140, 26, {34, 197, 94, 255}, 2, 0);
-    renderer_.drawText(fontSmall_, "TIEMPO ACTUAL", 960, timeBoxY - 10, {18, 18, 18, 255}, true);
+    SDL_Color tagCol = isRecon ? SDL_Color{56, 189, 248, 255} : SDL_Color{34, 197, 94, 255};
+    const char* tagText = isRecon ? "CALENTAMIENTO" : "TIEMPO OFICIAL";
+    renderer_.drawNeobrutalRect(960 - 80, timeBoxY - 14, 160, 26, tagCol, 2, 0);
+    renderer_.drawText(fontSmall_, tagText, 960, timeBoxY - 10, {18, 18, 18, 255}, true);
 
     // 3. Tarjeta de Mejor Vuelta y Última Vuelta (Esquina Superior Derecha)
     int bestBoxW = 320;
@@ -190,63 +344,74 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
     }
     renderer_.drawText(fontSmall_, lastBuf, bestBoxX + bestBoxW / 2, bestBoxY + 50, {226, 232, 240, 255}, true);
 
-    // 4. Banner animado al cruzar Sector con Delta (+/- en verde o rojo)
+    // 4. Banner animado al cruzar Sector o Meta con Delta (+/- en verde o rojo)
     if (sectorBannerTimer > 0.0f) {
-        int bW = 540;
+        int bW = 620;
         int bH = 75;
         int bannerX = 960 - bW / 2;
         int bannerY = 125;
 
         SDL_Color bannerCol = (sectorDelta <= 0.0f) ? SDL_Color{34, 197, 94, 255} : SDL_Color{239, 68, 68, 255};
+        if (currentLap == 2 && currentSector == 1 && lastLapTime > 0.0f) {
+            bannerCol = SDL_Color{250, 204, 21, 255}; // Amarillo para aviso de inicio de vuelta cronometrada
+        }
         renderer_.drawNeobrutalRect(bannerX, bannerY, bW, bH, bannerCol, 4, 6);
 
         char deltaBuf[64];
-        if (bestLapTime >= 9990.0f) {
+        if (currentLap == 2 && currentSector == 1 && lastLapTime > 0.0f) {
+            std::snprintf(deltaBuf, sizeof(deltaBuf), "¡VUELTA CRONOMETRADA INICIADA!");
+        } else if (bestLapTime >= 9990.0f) {
             std::snprintf(deltaBuf, sizeof(deltaBuf), "SECTOR %d COMPLETADO", currentSector);
         } else if (sectorDelta <= 0.0f) {
             std::snprintf(deltaBuf, sizeof(deltaBuf), "SECTOR %d  •  %.2fs", currentSector, sectorDelta);
         } else {
             std::snprintf(deltaBuf, sizeof(deltaBuf), "SECTOR %d  •  +%.2fs", currentSector, sectorDelta);
         }
-        renderer_.drawText(fontTitle_, deltaBuf, 960, bannerY + 12, {18, 18, 18, 255}, true);
+        renderer_.drawText(fontTitle_, deltaBuf, 960, bannerY + 14, {18, 18, 18, 255}, true);
     }
 
-    // 4.1 Aviso dinámico de curva peligrosa / frenada necesaria (Braking Indicator)
-    // Analiza la curvatura que viene en los próximos 15 a 35 segmentos (~180m a 420m adelante)
+    // 4.1 Cartel Modernizado de Reducción de Velocidad / Curva Peligrosa (Apex Braking Indicator)
+    // Analiza la curvatura real que se avecina en los próximos 10 a 28 segmentos (~120m a 340m adelante)
     int currentSegIdx = static_cast<int>(std::floor(car.getTrackZ() / Road::kSegmentLength));
     float maxAheadCurve = 0.0f;
+    float curveDirection = 0.0f;
     for (int k = 8; k < 28; ++k) {
-        float cMag = std::abs(road.getSegment(currentSegIdx + k).curve);
-        if (cMag > maxAheadCurve) maxAheadCurve = cMag;
+        float c = road.getSegment(currentSegIdx + k).curve;
+        if (std::abs(c) > maxAheadCurve) {
+            maxAheadCurve = std::abs(c);
+            curveDirection = c;
+        }
     }
 
-    // Velocidad segura recomendada según el radio de la curva venidera
+    // Velocidad límite segura calculada según la física real del agarre de competición
     float safeSpeed = 260.0f;
-    int suggestedGear = 6;
-    if (maxAheadCurve > 4.5f) {
-        safeSpeed = 125.0f; // Horquillas o chicanes lentas
-        suggestedGear = 2;
-    } else if (maxAheadCurve > 3.6f) {
-        safeSpeed = 160.0f; // Curvas técnicas medias
+    int suggestedGear = 5;
+    if (maxAheadCurve > 5.8f) {
+        safeSpeed = 135.0f; // Horquillas muy lentas
         suggestedGear = 3;
-    } else if (maxAheadCurve > 2.6f) {
-        safeSpeed = 195.0f;
+    } else if (maxAheadCurve > 4.5f) {
+        safeSpeed = 165.0f; // Curvas medias y chicanes técnicas
+        suggestedGear = 3;
+    } else if (maxAheadCurve > 3.2f) {
+        safeSpeed = 195.0f; // Curvones veloces
         suggestedGear = 4;
     }
 
-    // Si el auto va más rápido de lo seguro para la curva que se avecina, activar aviso
-    if (car.getSpeed() > safeSpeed + 15.0f && maxAheadCurve >= 3.2f) {
-        int warnW = 480;
-        int warnH = 75;
+    // Si el auto va más rápido de lo seguro para la curva que se avecina, activar cartel HUD deportivo
+    if (car.getSpeed() > safeSpeed + 12.0f && maxAheadCurve >= 4.0f) {
+        int warnW = 460;
+        int warnH = 68;
         int warnX = 960 - warnW / 2;
-        int warnY = (sectorBannerTimer > 0.0f) ? 215 : 125;
+        // Ubicación estratégica debajo del retrovisor y banner de sector, 100% visible sin tapar la pista
+        int warnY = (sectorBannerTimer > 0.0f) ? 210 : 130;
 
-        // Pulso de advertencia rojo neobrutalista
+        // Pulso animado de advertencia neobrutalista
         renderer_.drawNeobrutalRect(warnX, warnY, warnW, warnH, {239, 68, 68, 255}, 4, 6);
-
+        // Franja lateral con icono de dirección de giro
+        const char* arrowSymbol = (curveDirection > 0.0f) ? ">>>" : "<<<";
         char warnBuf[64];
-        std::snprintf(warnBuf, sizeof(warnBuf), "¡ FRENA !  REDUCE A %dª", suggestedGear);
-        renderer_.drawText(fontTitle_, warnBuf, 960, warnY + 12, {255, 255, 255, 255}, true);
+        std::snprintf(warnBuf, sizeof(warnBuf), "%s FRENA %dª %s", arrowSymbol, suggestedGear, arrowSymbol);
+        renderer_.drawText(fontTitle_, warnBuf, 960, warnY + 11, {255, 255, 255, 255}, true);
     }
 
     // 5. Mini Mapa del Circuito Técnico (Esquina Derecha de la Pantalla)
@@ -262,73 +427,43 @@ void UserInterface::renderMinimap(const Road& road, float playerZ, int currentSe
     if (segments.empty()) return;
 
     // Caja Neobrutalista del Mini Mapa
-    renderer_.drawNeobrutalRect(mapX, mapY, mapW, mapH, {24, 26, 32, 240}, 4, 6);
+    renderer_.drawNeobrutalRect(mapX, mapY, mapW, mapH, {20, 22, 28, 245}, 4, 6);
 
     // Encabezado de Sectores arriba del mapa
     renderer_.drawNeobrutalRect(mapX + 12, mapY + 10, mapW - 24, 32, {15, 23, 42, 255}, 2, 0);
 
     // Indicadores de los 3 sectores (S1, S2, S3)
     int secBtnW = (mapW - 32) / 3;
+    const SDL_Color sectorColors[3] = {
+        {37, 99, 235, 255},   // S1: Azul Real Intenso (Blue)
+        {250, 204, 21, 255},  // S2: Amarillo Competición (Yellow)
+        {239, 68, 68, 255}    // S3: Rojo F1 (Red)
+    };
+
     for (int s = 1; s <= 3; ++s) {
         int sx = mapX + 16 + (s - 1) * secBtnW;
         bool isActive = (s == currentSector);
-        SDL_Color bgCol = isActive ? SDL_Color{250, 204, 21, 255} : SDL_Color{39, 42, 52, 255};
-        SDL_Color textCol = isActive ? SDL_Color{18, 18, 18, 255} : SDL_Color{148, 163, 184, 255};
+        SDL_Color bgCol = isActive ? sectorColors[s - 1] : SDL_Color{39, 42, 52, 255};
+        SDL_Color textCol = isActive ? SDL_Color{255, 255, 255, 255} : SDL_Color{148, 163, 184, 255};
         renderer_.drawNeobrutalRect(sx, mapY + 13, secBtnW - 4, 26, bgCol, 1, 0);
         char sName[16];
         std::snprintf(sName, sizeof(sName), "S%d", s);
         renderer_.drawText(fontSmall_, sName, sx + (secBtnW - 4) / 2, mapY + 16, textCol, true);
     }
 
-    // Calcular la silueta 2D del circuito trazando la curvatura segmento a segmento
-    static std::vector<std::pair<float, float>> track2D;
+    // Bounding box precalculado directamente de las coordenadas 2D exactas del circuito
     static float minX = 0, maxX = 0, minY = 0, maxY = 0;
     static size_t lastSegCount = 0;
 
-    if (track2D.size() != segments.size() || lastSegCount != segments.size()) {
-        track2D.clear();
-        int nSegs = static_cast<int>(segments.size());
-        track2D.reserve(nSegs);
-
-        // Factor de curvatura realista para trazado de circuito (sin bucles ni círculos cerrados)
-        const float kAngle = 0.0075f;
-
-        // 2. Integrar posiciones acumuladas
-        std::vector<std::pair<float, float>> rawPoints;
-        rawPoints.reserve(nSegs + 1);
-        rawPoints.push_back({0.0f, 0.0f});
-
-        float curAngle = 0.0f;
+    int totalSegs = static_cast<int>(segments.size());
+    if (lastSegCount != segments.size()) {
+        minX = maxX = segments[0].mapX;
+        minY = maxY = segments[0].mapY;
         for (const auto& seg : segments) {
-            curAngle += seg.curve * kAngle;
-            float px = rawPoints.back().first + std::sin(curAngle) * Road::kSegmentLength;
-            float py = rawPoints.back().second - std::cos(curAngle) * Road::kSegmentLength;
-            rawPoints.push_back({px, py});
-        }
-
-        // 3. Error de desplazamiento final (gap entre final de S3 e inicio de S1)
-        float endDx = rawPoints.back().first;
-        float endDy = rawPoints.back().second;
-
-        minX = maxX = 0.0f;
-        minY = maxY = 0.0f;
-
-        // 4. Distribuir el cierre suavemente a lo largo de toda la pista para un bucle continuo perfecto
-        for (int i = 0; i < nSegs; ++i) {
-            float t = static_cast<float>(i) / static_cast<float>(nSegs);
-            float cx = rawPoints[i].first - endDx * t;
-            float cy = rawPoints[i].second - endDy * t;
-            track2D.push_back({cx, cy});
-
-            if (i == 0) {
-                minX = maxX = cx;
-                minY = maxY = cy;
-            } else {
-                if (cx < minX) minX = cx;
-                if (cx > maxX) maxX = cx;
-                if (cy < minY) minY = cy;
-                if (cy > maxY) maxY = cy;
-            }
+            if (seg.mapX < minX) minX = seg.mapX;
+            if (seg.mapX > maxX) maxX = seg.mapX;
+            if (seg.mapY < minY) minY = seg.mapY;
+            if (seg.mapY > maxY) maxY = seg.mapY;
         }
         lastSegCount = segments.size();
     }
@@ -346,29 +481,21 @@ void UserInterface::renderMinimap(const Road& road, float playerZ, int currentSe
     float centerOffsetX = plotAreaX + (plotAreaW - trackRangeX * scale) * 0.5f - minX * scale;
     float centerOffsetY = plotAreaY + (plotAreaH - trackRangeY * scale) * 0.5f - minY * scale;
 
-    int totalSegs = static_cast<int>(segments.size());
     int s1End = totalSegs / 3;
     int s2End = (totalSegs * 2) / 3;
 
-    // Colores de los 3 sectores: S1 = Celeste, S2 = Amarillo Neón, S3 = Magenta Racing
-    const SDL_Color sectorColors[3] = {
-        {56, 189, 248, 255},  // S1: Celeste Eléctrico
-        {250, 204, 21, 255},  // S2: Amarillo Neón
-        {244, 63, 94, 255}    // S3: Magenta Racing
-    };
-
-    // Dibujar el trazado limpio y continuo de la pista con sus 3 sectores claramente diferenciados
-    const int step = 2; // Trazar cada 2 segmentos para máxima suavidad
+    // Dibujar el trazado real 1:1 de la pista con sus 3 sectores claramente diferenciados
+    const int step = 2; // Trazar cada 2 segmentos para máxima fidelidad y suavidad
     for (int i = 0; i < totalSegs; i += step) {
         int nextI = (i + step) % totalSegs;
-        float x1 = centerOffsetX + track2D[i].first * scale;
-        float y1 = centerOffsetY + track2D[i].second * scale;
-        float x2 = centerOffsetX + track2D[nextI].first * scale;
-        float y2 = centerOffsetY + track2D[nextI].second * scale;
+        float x1 = centerOffsetX + segments[i].mapX * scale;
+        float y1 = centerOffsetY + segments[i].mapY * scale;
+        float x2 = centerOffsetX + segments[nextI].mapX * scale;
+        float y2 = centerOffsetY + segments[nextI].mapY * scale;
 
         int sec = (i < s1End) ? 0 : ((i < s2End) ? 1 : 2);
         SDL_Color lineColor = sectorColors[sec];
-        // Resaltar con mayor grosor y brillo el sector por donde va el auto actualmente
+        // Resaltar con mayor grosor el sector por donde va el auto actualmente
         if (sec + 1 == currentSector) {
             renderer_.renderThickLine(x1, y1, x2, y2, 5.0f, lineColor);
         } else {
@@ -377,59 +504,62 @@ void UserInterface::renderMinimap(const Road& road, float playerZ, int currentSe
     }
 
     // Línea de meta sutil representada como pequeña barra perpendicular blanca
-    if (track2D.size() > 4) {
-        float x0 = centerOffsetX + track2D[0].first * scale;
-        float y0 = centerOffsetY + track2D[0].second * scale;
-        float x1 = centerOffsetX + track2D[4].first * scale;
-        float y1 = centerOffsetY + track2D[4].second * scale;
+    if (totalSegs > 4) {
+        float x0 = centerOffsetX + segments[0].mapX * scale;
+        float y0 = centerOffsetY + segments[0].mapY * scale;
+        float x1 = centerOffsetX + segments[4].mapX * scale;
+        float y1 = centerOffsetY + segments[4].mapY * scale;
         float dx = x1 - x0;
         float dy = y1 - y0;
         float len = std::hypot(dx, dy);
         if (len > 0.001f) {
             float nx = -dy / len;
             float ny = dx / len;
-            renderer_.renderThickLine(x0 - nx * 6.0f, y0 - ny * 6.0f, x0 + nx * 6.0f, y0 + ny * 6.0f, 3.5f, {255, 255, 255, 255});
+            renderer_.renderThickLine(x0 - nx * 7.0f, y0 - ny * 7.0f, x0 + nx * 7.0f, y0 + ny * 7.0f, 3.5f, {255, 255, 255, 255});
         }
     }
 
-    // Indicador dinámico de posición del coche: Flecha / Chevron de competición apuntando en la dirección del viaje
-    int pIdx = static_cast<int>(playerZ / Road::kSegmentLength) % totalSegs;
+    // Indicador dinámico de posición del coche: Triángulo chevron de competición apuntando en la dirección del viaje
+    float exactSeg = playerZ / Road::kSegmentLength;
+    int pIdx = static_cast<int>(std::floor(exactSeg)) % totalSegs;
     if (pIdx < 0) pIdx += totalSegs;
+    float frac = exactSeg - std::floor(exactSeg);
+    int nextPIdx = (pIdx + 1) % totalSegs;
 
-    if (pIdx < static_cast<int>(track2D.size())) {
-        int nextIdx = (pIdx + 4) % totalSegs;
-        float curX = centerOffsetX + track2D[pIdx].first * scale;
-        float curY = centerOffsetY + track2D[pIdx].second * scale;
-        float dirX = (centerOffsetX + track2D[nextIdx].first * scale) - curX;
-        float dirY = (centerOffsetY + track2D[nextIdx].second * scale) - curY;
-        float dirLen = std::hypot(dirX, dirY);
+    // Interpolación continua para que el auto se mueva con total fluidez analógica en el mapa
+    float curX = centerOffsetX + (segments[pIdx].mapX * (1.0f - frac) + segments[nextPIdx].mapX * frac) * scale;
+    float curY = centerOffsetY + (segments[pIdx].mapY * (1.0f - frac) + segments[nextPIdx].mapY * frac) * scale;
 
-        if (dirLen > 0.001f) {
-            float fwdX = dirX / dirLen;
-            float fwdY = dirY / dirLen;
-            float rightX = -fwdY;
-            float rightY = fwdX;
+    int lookAheadIdx = (pIdx + 4) % totalSegs;
+    float dirX = (centerOffsetX + segments[lookAheadIdx].mapX * scale) - curX;
+    float dirY = (centerOffsetY + segments[lookAheadIdx].mapY * scale) - curY;
+    float dirLen = std::hypot(dirX, dirY);
 
-            float arrowLen = 9.0f;
-            float arrowHalfW = 6.0f;
+    if (dirLen > 0.001f) {
+        float fwdX = dirX / dirLen;
+        float fwdY = dirY / dirLen;
+        float rightX = -fwdY;
+        float rightY = fwdX;
 
-            // Vértices del triángulo de navegación
-            float tipX = curX + fwdX * arrowLen;
-            float tipY = curY + fwdY * arrowLen;
-            float leftX = curX - fwdX * (arrowLen * 0.5f) - rightX * arrowHalfW;
-            float leftY = curY - fwdY * (arrowLen * 0.5f) - rightY * arrowHalfW;
-            float rightPosX = curX - fwdX * (arrowLen * 0.5f) + rightX * arrowHalfW;
-            float rightPosY = curY - fwdY * (arrowLen * 0.5f) + rightY * arrowHalfW;
+        float arrowLen = 10.0f;
+        float arrowHalfW = 6.5f;
 
-            // Borde oscuro neobrutalista
-            renderer_.renderThickLine(tipX, tipY, leftX, leftY, 2.5f, {18, 18, 18, 255});
-            renderer_.renderThickLine(leftX, leftY, rightPosX, rightPosY, 2.5f, {18, 18, 18, 255});
-            renderer_.renderThickLine(rightPosX, rightPosY, tipX, tipY, 2.5f, {18, 18, 18, 255});
+        // Vértices del triángulo de navegación
+        float tipX = curX + fwdX * arrowLen;
+        float tipY = curY + fwdY * arrowLen;
+        float leftX = curX - fwdX * (arrowLen * 0.5f) - rightX * arrowHalfW;
+        float leftY = curY - fwdY * (arrowLen * 0.5f) - rightY * arrowHalfW;
+        float rightPosX = curX - fwdX * (arrowLen * 0.5f) + rightX * arrowHalfW;
+        float rightPosY = curY - fwdY * (arrowLen * 0.5f) + rightY * arrowHalfW;
 
-            // Relleno rojo competición de alta visibilidad
-            SDL_Color redFill = {239, 68, 68, 255};
-            renderer_.renderTriangle(tipX, tipY, leftX, leftY, rightPosX, rightPosY, redFill, redFill, redFill);
-        }
+        // Borde oscuro neobrutalista
+        renderer_.renderThickLine(tipX, tipY, leftX, leftY, 2.5f, {18, 18, 18, 255});
+        renderer_.renderThickLine(leftX, leftY, rightPosX, rightPosY, 2.5f, {18, 18, 18, 255});
+        renderer_.renderThickLine(rightPosX, rightPosY, tipX, tipY, 2.5f, {18, 18, 18, 255});
+
+        // Relleno rojo competición de alta visibilidad
+        SDL_Color redFill = {239, 68, 68, 255};
+        renderer_.renderTriangle(tipX, tipY, leftX, leftY, rightPosX, rightPosY, redFill, redFill, redFill);
     }
 }
 
@@ -466,10 +596,14 @@ void UserInterface::renderTimeAttackFinish(float bestLapTime, float totalSession
         float lt = lapTimes[i];
         int lm = static_cast<int>(lt) / 60;
         float ls = lt - lm * 60.0f;
-        char rowBuf[64];
+        char rowBuf[80];
         bool isBest = (std::abs(lt - bestLapTime) < 0.001f);
-        std::snprintf(rowBuf, sizeof(rowBuf), "VUELTA %zu:  %02d:%05.2f %s", i + 1, lm, ls, isBest ? " ★ (RECORD)" : "");
-        SDL_Color rowCol = isBest ? SDL_Color{34, 197, 94, 255} : SDL_Color{24, 24, 27, 255};
+        if (i == 0) {
+            std::snprintf(rowBuf, sizeof(rowBuf), "V.1 (RECONOCIMIENTO):  %02d:%05.2f", lm, ls);
+        } else {
+            std::snprintf(rowBuf, sizeof(rowBuf), "V.2 (CRONOMETRADA):   %02d:%05.2f %s", lm, ls, isBest ? " ★ (OFICIAL)" : "");
+        }
+        SDL_Color rowCol = (i > 0 && isBest) ? SDL_Color{34, 197, 94, 255} : ((i == 0) ? SDL_Color{56, 189, 248, 255} : SDL_Color{24, 24, 27, 255});
         renderer_.drawText(fontHud_, rowBuf, 960, lapListY + static_cast<int>(i) * 50, rowCol, true);
     }
 

@@ -8,7 +8,7 @@
 struct CarPhysics {
     // Parámetros ajustables
     float maxSpeed = 240.0f;       // km/h
-    float accelPower = 58.0f;      // Aceleración suave y progresiva con inercia
+    float accelPower = 70.0f;      // Aceleración suave y progresiva con inercia
     float brakingPower = 110.0f;   // Tasa de frenado base progresiva
     float naturalDecel = 24.0f;    // Desaceleración suave y progresiva
     float offRoadDecel = 90.0f;    // Fricción en césped
@@ -38,6 +38,7 @@ public:
     bool isOffRoad() const { return std::abs(x_) > 1.05f; }
     bool isDrifting() const { return isDrifting_; }
     float getWheelVisualAngle() const { return wheelAngleVisual_; }
+    float getLatVel() const { return latVel_; }
 
     // Getters de telemetría de cabina inmersiva (suspensión y fuerzas G)
     float getPitch() const { return pitch_; }
@@ -47,7 +48,7 @@ public:
     float getThrottleInput() const { return lastThrottle_; }
     float getBrakeInput() const { return lastBrake_; }
 
-    void setInitialPosition(float x, float z) { x_ = x; trackZ_ = z; }
+    void setInitialPosition(float x, float z) { x_ = x; trackZ_ = z; latVel_ = 0.0f; }
     void bumpX(float deltaX) { x_ = std::clamp(x_ + deltaX, -0.95f, 0.95f); }
     void addDistance(float delta) { trackZ_ += delta; }
 
@@ -56,6 +57,7 @@ private:
 
     float speed_ = 0.0f;        // km/h
     float x_ = 0.0f;            // -1.0 a +1.0 (0 = centro de pista)
+    float latVel_ = 0.0f;       // Velocidad lateral con inercia (suaviza el movimiento)
     float trackZ_ = 0.0f;       // Distancia recorrida
     int gear_ = 0;              // Empieza en Neutral (N): -1 = R, 0 = N, 1 a 6 = Marchas
     float rpm_ = 900.0f;        // Ralentí

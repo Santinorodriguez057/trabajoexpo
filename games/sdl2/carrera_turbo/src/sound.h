@@ -14,6 +14,7 @@ public:
     void playCheckpoint();
     void playCrash();
     void playShiftAlert();
+    void playCountdownBeep(bool isGo = false);
 
 private:
     Mix_Chunk* generateTone(int durationMs, int freq, float decay, float volume, int type);

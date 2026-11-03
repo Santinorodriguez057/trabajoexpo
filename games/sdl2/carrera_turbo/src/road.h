@@ -11,7 +11,8 @@ enum class PropType {
     CHECKPOINT_ARCH,
     FINISH_LINE_ARCH,
     LAMPPOST,
-    ROCK
+    ROCK,
+    GRANDSTAND
 };
 
 struct RoadProp {
@@ -31,8 +32,11 @@ struct RoadSegment {
     float worldX = 0.0f;
     float worldY = 0.0f;
     float worldZ = 0.0f;
+    float mapX = 0.0f;  // Coordenada 2D del minimapa (análisis analítico exacto)
+    float mapY = 0.0f;
 
     float curve = 0.0f; // Curvatura horizontal
+    float heading = 0.0f; // Dirección acumulada en radianes (tangente continua)
     float clipY = 1080.0f;
 
     // Colores alternados estilo neobrutalista
@@ -54,6 +58,7 @@ public:
 
     const RoadSegment& getSegment(int index) const;
     const RoadSegment& findSegment(float z) const;
+    float getInterpolatedCurve(float z) const;
     int getSegmentCount() const { return static_cast<int>(segments_.size()); }
     float getTrackLength() const { return trackLength_; }
     const std::vector<RoadSegment>& getSegments() const { return segments_; }

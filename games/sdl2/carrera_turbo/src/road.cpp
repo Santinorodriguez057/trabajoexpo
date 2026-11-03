@@ -46,7 +46,9 @@ void Road::addCurve(int num, float curve, float endY) {
     }
     for (int i = 0; i < num; ++i) {
         float t = static_cast<float>(i) / num;
-        float c = std::sin(t * 3.14159265f) * curve;
+        // Factor global para curvas más pronunciadas (afecta visual, física y minimapa por igual)
+        const float kCurveBoost = 1.3f;
+        float c = std::sin(t * 3.14159265f) * curve * kCurveBoost;
         float y = startY + (endY - startY) * (0.5f - 0.5f * std::cos(t * 3.14159265f));
         addSegment(c, y);
     }
@@ -67,87 +69,103 @@ void Road::generateTrack(bool isTimeAttack) {
     traffic_.clear();
 
     // =========================================================================
-    // CIRCUITO DE COMPETICIÓN PROFESIONAL: CURVAS PRONUNCIADAS Y VARIADAS
-    // Con horquillas cerradas, eses dobles, chicanes y cambios de elevación
+    // CIRCUITO DE COMPETICIÓN PROFESIONAL - FORMATO EXPO (~1:15 min por vuelta)
+    // Trazado de Gran Premio limpio y dinámico con 4 sectores de frenada, curvas técnicas y chicanes
     // =========================================================================
 
-    // --- SECTOR 1: SECCIÓN DE ENTRADA Y SUBIDA TÉCNICA ---
-    // 1. Recta de meta
-    addStraight(8);
+    // --- SECTOR 1: SALIDA, CURVA 1 Y ESES TÉCNICAS (HACIA EL ESTE) ---
+    // 1. Recta principal de meta y parrilla de salida
+    addStraight(22);
 
-    // 2. Curva 1: Horquilla cerrada hacia la derecha (Frenada fuerte y giro cerrado)
-    addCurve(60, 4.6f, 0.0f);
-    addStraight(4);
+    // 2. Curva 1: Frenada fuerte a derechas (90 grados)
+    addCurve(16, 4.6f, 0.0f);
 
-    // 3. Curva 2: Horquilla enlazada hacia la izquierda
-    addCurve(55, -4.8f, 0.0f);
-    addStraight(5);
-
-    // 4. Subida pronunciada con Curva amplia hacia la izquierda
-    addHill(65, 420.0f);
-    addCurve(70, -3.8f, 0.0f);
-    addStraight(5);
-
-    // 5. Curva en "S" técnica en bajada (Derecha rápida -> Izquierda violenta)
-    addHill(65, -420.0f);
-    addCurve(45, 4.5f, 0.0f);
-    addStraight(3);
-    addCurve(45, -4.8f, 0.0f);
-    addStraight(4);
-
-    // --- SECTOR 2: TRAMO DE ESES RÁPIDAS Y HORQUILLA DE MEDIA VELOCIDAD ---
-    // 6. Recta intermedia de aceleración
-    addStraight(8);
-
-    // 7. Eses triples enlazadas (Izquierda -> Derecha -> Izquierda)
-    addCurve(40, -4.2f, 0.0f);
-    addStraight(2);
-    addCurve(40, 4.6f, 0.0f);
-    addStraight(2);
-    addCurve(40, -4.4f, 0.0f);
-    addStraight(4);
-
-    // 8. Gran curvón peraltado a la derecha
-    addCurve(75, 4.0f, 200.0f);
-    addStraight(5);
-
-    // 9. Doble vértice técnico a la izquierda (Requiere ceñirse a los pianos)
-    addCurve(50, -5.2f, -200.0f);
-    addStraight(4);
-    addCurve(45, -4.6f, 0.0f);
-    addStraight(4);
-
-    // 10. Colina ciega (Crest) con curva cerrada a la derecha justo al coronar
-    addHill(70, 460.0f);
-    addCurve(55, 4.4f, -460.0f);
-    addStraight(5);
-
-    // --- SECTOR 3: CHICANES, HORQUILLAS Y RECTA TRASERA ---
-    // 11. Recta larga de atrás (Zona de velocidad punta en 5ª y 6ª marcha)
+    // 3. Recta de aceleración hacia las eses
     addStraight(20);
 
-    // 12. Chicane "Bus Stop" (Frenada agresiva: Izquierda -> Derecha)
-    addCurve(35, -5.5f, 0.0f);
-    addStraight(3);
-    addCurve(35, 5.5f, 0.0f);
-    addStraight(4);
+    // 4. Eses técnicas enlazadas (Izquierda -> Derecha)
+    addCurve(12, -4.2f, 0.0f);
+    addCurve(12, 4.2f, 0.0f);
 
-    // 13. Curva de radio decreciente a la derecha (Empieza media y se cierra)
-    addCurve(40, 3.8f, 0.0f);
-    addCurve(35, 5.2f, 0.0f);
-    addStraight(4);
+    // 5. Subida a la colina con pianos altos
+    addStraight(20);
 
-    // 14. Curva final amplia de entrada a la recta de meta
-    addCurve(60, 4.2f, 0.0f);
-    addStraight(8);
+    // --- SECTOR 2: CURVÓN EN BAJADA, RECTA INTERMEDIA Y HORQUILLA (HACIA EL SUR/OESTE) ---
+    // 6. Curva 2: Gran curvón peraltado a derechas (90 grados) con descenso
+    addHill(18, 180.0f);
+    addCurve(18, 4.4f, -180.0f);
+
+    // 7. Recta intermedia de alta velocidad
+    addStraight(35);
+
+    // 8. Curva 3: Horquilla técnica a derechas (90 grados)
+    addCurve(16, 5.0f, 0.0f);
+
+    // --- SECTOR 3: RECTA TRASERA, CHICANE 'BUS STOP' Y PARABÓLICA FINAL (HACIA EL NORTE) ---
+    // 9. Recta trasera
+    addStraight(14);
+
+    // 10. Chicane 'Bus Stop' de gran precisión (Izquierda -> Derecha)
+    addCurve(12, -4.8f, 0.0f);
+    addCurve(12, 4.8f, 0.0f);
+
+    // 11. Recta de aproximación a la parabólica final
+    addStraight(26);
+
+    // 12. Curva 4: Parabólica final a derechas (90 grados) de vuelta a meta
+    addCurve(18, 4.6f, 0.0f);
+
+    // 13. Recta final hacia la línea de llegada
+    addStraight(14);
 
     trackLength_ = segments_.size() * kSegmentLength;
 
+    // =========================================================================
+    // INTEGRACIÓN CONTINUA DE COORDENADAS 3D DE LA PISTA Y SILUETA 2D DEL MINIMAPA
+    // Garantiza que el minimapa coincida 1:1 exactamente con las curvas que ve y toma el jugador
+    // =========================================================================
+    int totalSegs = static_cast<int>(segments_.size());
+    float curHeading = 0.0f;
+    float curX = 0.0f;
+    const float kCurveIntegrationFactor = 0.0075f;
+
+    // 1. Suma total de curvatura para cerrar en un bucle cerrado continuo de 360 grados (2 * PI)
+    float sumCurve = 0.0f;
+    for (int i = 0; i < totalSegs; ++i) {
+        sumCurve += segments_[i].curve;
+    }
+    const float kPi2 = 6.2831853f;
+    float mapAngleScale = (std::abs(sumCurve) > 0.01f) ? (kPi2 / sumCurve) : 0.024f;
+
+    // 2. Integrar odometría 2D exacta (X, Y)
+    std::vector<std::pair<float, float>> raw2D(totalSegs + 1, {0.0f, 0.0f});
+    float mapHeading = 0.0f;
+    for (int i = 0; i < totalSegs; ++i) {
+        segments_[i].heading = curHeading;
+        segments_[i].worldX = curX;
+
+        curHeading += segments_[i].curve * kCurveIntegrationFactor;
+        curX += std::sin(curHeading) * kSegmentLength * 720.0f;
+
+        mapHeading += segments_[i].curve * mapAngleScale;
+        float nx = raw2D[i].first + std::sin(mapHeading) * kSegmentLength;
+        float ny = raw2D[i].second - std::cos(mapHeading) * kSegmentLength;
+        raw2D[i + 1] = {nx, ny};
+    }
+
+    // 3. Compensar suavemente la pequeña discrepancia residual de cierre para un bucle 2D perfecto
+    float gapX = raw2D.back().first;
+    float gapY = raw2D.back().second;
+    for (int i = 0; i < totalSegs; ++i) {
+        float t = static_cast<float>(i) / static_cast<float>(totalSegs);
+        segments_[i].mapX = raw2D[i].first - gapX * t;
+        segments_[i].mapY = raw2D[i].second - gapY * t;
+    }
+
     // Decoración rica y variada a ambos lados de la pista (incluyendo rocas, postes y arboledas)
-    // Arco de Meta / Salida en el segmento 0 y en el final
+    // Arco de Meta / Salida único en la línea de largada (segmento 0)
     if (!segments_.empty()) {
         segments_[0].props.push_back({PropType::FINISH_LINE_ARCH, 0.0f});
-        segments_.back().props.push_back({PropType::FINISH_LINE_ARCH, 0.0f});
     }
 
     for (size_t i = 8; i < segments_.size(); i += 4) {
@@ -182,6 +200,23 @@ void Road::generateTrack(bool isTimeAttack) {
             segments_[i].props.push_back({bgProp, outerSide});
         }
     }
+
+    // TRIBUNAS CON PÚBLICO POR SECTORES (recta de meta, chicane y horquilla final)
+    auto addStands = [&](int from, int to, float side) {
+        for (int i = std::max(0, from); i < to && i < static_cast<int>(segments_.size()); ++i) {
+            auto& props = segments_[i].props;
+            props.erase(std::remove_if(props.begin(), props.end(), [&](const RoadProp& p) {
+                return p.type != PropType::FINISH_LINE_ARCH && p.type != PropType::CHECKPOINT_ARCH && (p.offset * side) > 0.0f;
+            }), props.end());
+            if ((i - from) % 5 == 0) props.push_back({PropType::GRANDSTAND, side * 2.05f});
+        }
+    };
+    int nTotal = static_cast<int>(segments_.size());
+    addStands(2, 14, -1.0f);                  // Recta de meta (izquierda)
+    addStands(4, 12, 1.0f);                   // Recta de meta (derecha)
+    int sector3 = (nTotal * 2) / 3;
+    addStands(sector3 + 12, sector3 + 28, 1.0f); // Zona de chicane (Sector 3)
+    addStands(nTotal - 28, nTotal - 8, -1.0f);  // Horquilla final y recta previa a meta
 
     // Tráfico de coches rivales distribuidos en los 3 carriles
     std::vector<SDL_Color> trafficColors = {
@@ -265,4 +300,14 @@ const RoadSegment& Road::getSegment(int index) const {
 const RoadSegment& Road::findSegment(float z) const {
     int idx = static_cast<int>(std::floor(z / kSegmentLength));
     return getSegment(idx);
+}
+
+float Road::getInterpolatedCurve(float z) const {
+    if (segments_.empty()) return 0.0f;
+    float segPos = z / kSegmentLength;
+    int idx0 = static_cast<int>(std::floor(segPos));
+    float t = segPos - idx0;
+    float c0 = getSegment(idx0).curve;
+    float c1 = getSegment(idx0 + 1).curve;
+    return c0 + (c1 - c0) * t;
 }

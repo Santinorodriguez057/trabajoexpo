@@ -138,11 +138,13 @@ int main(int argc, char** argv) {
     float topSpeedAchieved2 = 0.0f;
     int winnerPlayer = 0; // 0 = sin ganador, 1 = P1, 2 = P2
     int pauseMenuIndex = 0;
+    float countdownTimer = 4.0f; // Semáforo estilo F1 (3s de luces rojas progresivas, 1s de verde GO!)
+    int lastCountdownStep = 5;
 
     // =========================================================================
     // VARIABLES DEL MODO TIME ATTACK / VUELTA RÁPIDA (SOLO 1P)
     // =========================================================================
-    const int kTotalLaps = 3;             // 3 Vueltas por sesión
+    const int kTotalLaps = 2;             // Formato Expo: 2 vueltas por jugador (~2.5 min de sesión)
     int currentLap = 1;
     float currentLapTime = 0.0f;
     float bestLapTime = 99999.0f;
@@ -236,9 +238,32 @@ int main(int argc, char** argv) {
                 if (in1.confirm || (isSplitScreen && in2.confirm)) {
                     input1.calibrate();
                     if (isSplitScreen) input2.calibrate();
-                    state = GameState::RACING;
+                    countdownTimer = 4.0f;
+                    lastCountdownStep = 5;
+                    sound.playCountdownBeep(false); // Primer beep rojo
+                    state = GameState::COUNTDOWN;
                 } else if (in1.cancel || (isSplitScreen && in2.cancel)) {
                     running = false;
+                }
+                break;
+
+            case GameState::COUNTDOWN:
+                countdownTimer -= dt;
+                {
+                    int curStep = static_cast<int>(std::ceil(countdownTimer));
+                    if (curStep != lastCountdownStep && curStep >= 1) {
+                        lastCountdownStep = curStep;
+                        if (curStep == 1) {
+                            sound.playCountdownBeep(true); // ¡Luz verde / GO!
+                        } else {
+                            sound.playCountdownBeep(false); // Luz roja
+                        }
+                    }
+                }
+                // Los motores rugen en ralentí / aceleración en punto muerto mientras esperan
+                sound.updateEngine(car1.getRpm(), in1.throttle);
+                if (countdownTimer <= 0.0f) {
+                    state = GameState::RACING;
                 }
                 break;
 
@@ -273,8 +298,23 @@ int main(int argc, char** argv) {
 
                 // Actualizar P1
                 {
+                    float curve1 = road.getInterpolatedCurve(car1.getTrackZ());
                     const RoadSegment& curSeg1 = road.findSegment(car1.getTrackZ());
-                    car1.update(dt, in1, curSeg1.curve, p1ManualTransmission);
+                    car1.update(dt, in1, curve1, p1ManualTransmission);
+
+                    // DEBUG TEMPORAL: telemetría por consola con CT_DEBUG=1
+                    {
+                        static bool dbg = (std::getenv("CT_DEBUG") != nullptr);
+                        static float dbgT = 0.0f;
+                        dbgT += dt;
+                        if (dbg && dbgT >= 0.5f) {
+                            dbgT = 0.0f;
+                            std::printf("[DBG] seg=%d curve=%.2f speed=%.0f x=%.2f steer=%.2f wheelDeg=%.1f\n",
+                                        curSeg1.index, curSeg1.curve, car1.getSpeed(), car1.getX(),
+                                        in1.steering, in1.physicalAngleDeg);
+                            std::fflush(stdout);
+                        }
+                    }
 
                     float trackLength = road.getTrackLength();
 
@@ -329,29 +369,37 @@ int main(int argc, char** argv) {
                             lastLapTime = currentLapTime;
                             completedLapTimes.push_back(lastLapTime);
 
-                            if (lastLapTime < bestLapTime) {
-                                bestLapTime = lastLapTime;
-                                // Récord de vuelta: destello LED fucsia/púrpura y vibración de victoria
-                                input1.setLED(168, 85, 247);
-                                input1.setRumble(0.85f, 0.85f, 400);
+                            // Vuelta 1 = Reconocimiento (familiarizarse con el trazado)
+                            // Vuelta 2 = Vuelta Cronometrada Oficial (establece el tiempo de récord)
+                            if (currentLap == 1) {
+                                // Fin de reconocimiento: vibración suave y aviso
+                                input1.setLED(250, 204, 21); // Amarillo: alerta de inicio de vuelta oficial
+                                input1.setRumble(0.4f, 0.4f, 250);
                             } else {
-                                input1.setRumble(0.5f, 0.5f, 250);
+                                if (lastLapTime < bestLapTime) {
+                                    bestLapTime = lastLapTime;
+                                    // Récord de vuelta cronometrada: destello LED fucsia/púrpura y vibración de victoria
+                                    input1.setLED(168, 85, 247);
+                                    input1.setRumble(0.85f, 0.85f, 400);
+                                } else {
+                                    input1.setRumble(0.5f, 0.5f, 250);
+                                }
                             }
 
                             sound.playCheckpoint();
                             currentLap++;
 
-                            // Si completó las 3 vueltas fijas de la sesión, finaliza la carrera
+                            // Si completó las 2 vueltas (Reconocimiento + Cronometrada), finaliza la sesión
                             if (currentLap > kTotalLaps) {
                                 state = GameState::FINISH;
                                 break;
                             } else {
-                                // Continuar circuito cerrado a la siguiente vuelta sin perder velocidad
+                                // Continuar circuito cerrado a la siguiente vuelta lanzada sin perder velocidad
                                 car1.addDistance(-trackLength);
                                 currentLapTime = 0.0f;
                                 currentSectorTime = 0.0f;
-                                sectorBannerTimer = 2.5f;
-                                sectorDelta = (completedLapTimes.size() > 1) ? (lastLapTime - bestLapTime) : 0.0f;
+                                sectorBannerTimer = 3.0f;
+                                sectorDelta = 0.0f;
                                 currentSector = 1; // Volvemos a iniciar en Sector 1
                             }
                         }
@@ -375,8 +423,9 @@ int main(int argc, char** argv) {
 
                 // Actualizar P2 (si está activo el modo 2P, 100% automático sin paletas ni botones)
                 if (isSplitScreen) {
+                    float curve2 = road.getInterpolatedCurve(car2.getTrackZ());
                     const RoadSegment& curSeg2 = road.findSegment(car2.getTrackZ());
-                    car2.update(dt, in2, curSeg2.curve, false);
+                    car2.update(dt, in2, curve2, false);
 
                     int curIdx2 = curSeg2.index;
                     if (curIdx2 >= nextCheckpointSegment2 && curIdx2 < nextCheckpointSegment2 + 8) {
@@ -606,6 +655,11 @@ int main(int argc, char** argv) {
             if (isSplitScreen) {
                 ui.renderCalibration(in2, 2, true);
             }
+        } else if (state == GameState::COUNTDOWN) {
+            if (!isSplitScreen) {
+                ui.renderTimeAttackHud(car1, road, currentLap, kTotalLaps, currentLapTime, bestLapTime, lastLapTime, currentSector, sectorDelta, sectorBannerTimer);
+            }
+            ui.renderCountdown(countdownTimer);
         } else if (state == GameState::RACING) {
             if (isSplitScreen) {
                 float gap1 = car1.getTrackZ() - car2.getTrackZ();

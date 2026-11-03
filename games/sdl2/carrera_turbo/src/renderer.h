@@ -16,6 +16,7 @@ public:
     void renderSplitDivider(float p1Z, float p2Z, float trackLength);
 
     // Helpers neobrutalistas (100% compatibles con UI y otros módulos)
+    SDL_Renderer* getRenderer() const { return ren_; }
     void drawNeobrutalRect(int x, int y, int w, int h, SDL_Color fill, int borderW = 4, int shadowOffset = 6);
     void drawNeobrutalCircle(int cx, int cy, int radius, SDL_Color fill, int borderW = 4, int shadowOffset = 5);
     void drawText(TTF_Font* font, const std::string& text, int x, int y, SDL_Color color, bool center = false);
@@ -25,7 +26,7 @@ public:
 private:
     void renderSky(float carX, float skyScrollX, float horizonY, float raceTime, int viewW, int viewH);
     void renderRoad(const Road& road, const Car& car, float horizonY, float camTilt, float raceTime, int viewW, int viewH, const Car* otherCar, SDL_Color otherColor);
-    void renderProp(const RoadProp& prop, int screenX, int screenY, float roadScreenW, float clipY, float raceTime, int segIndex, int viewW);
+    void renderProp(const RoadProp& prop, int screenX, int screenY, float roadScreenW, float clipY, float raceTime, int segIndex, int viewW, float fog = 0.0f);
     void renderTrafficCar(const TrafficCar& car, int screenX, int screenY, float roadScreenW, float clipY, float segCurve, float raceTime);
     void renderSpeedEffects(const Car& car, float horizonY, float raceTime, int viewW, int viewH);
     void renderCockpit(const Car& car, const Road& road, float raceTime, int viewW, int viewH, bool isSplitScreen, const Car* otherCar, SDL_Color otherColor);
@@ -45,6 +46,8 @@ private:
     float skyParallaxX_ = 0.0f;
     float smoothedCurve_ = 0.0f;
     float smoothedCameraX_ = 0.0f;
+    float lastTrackZ_[3] = {0.0f, 0.0f, 0.0f}; // Por jugador (pantalla dividida)
+    float skyPan_[3] = {0.0f, 0.0f, 0.0f};
 
     static constexpr int kScreenWidth = 1920;
     static constexpr int kScreenHeight = 1080;

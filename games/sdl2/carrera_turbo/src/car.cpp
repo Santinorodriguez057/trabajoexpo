@@ -10,6 +10,7 @@ Car::Car(const CarPhysics& params)
 void Car::reset() {
     speed_ = 0.0f;
     x_ = 0.0f;
+    latVel_ = 0.0f;
     trackZ_ = 0.0f;
     gear_ = 0;                  // Empieza en Neutral (N)
     rpm_ = 900.0f;              // Ralentí
@@ -113,12 +114,12 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
     switch (gear_) {
         case -1: gearRatio = -3.20f; break; // Reversa
         case  0: gearRatio =  0.00f; break; // Neutral
-        case  1: gearRatio =  3.80f; break; // 1ª: Mucha fuerza, corte ~56 km/h
-        case  2: gearRatio =  2.20f; break; // 2ª: Fuerza media-alta, corte ~100 km/h
-        case  3: gearRatio =  1.50f; break; // 3ª: Fuerza media, corte ~152 km/h
-        case  4: gearRatio =  1.15f; break; // 4ª: Crucero veloz, corte ~202 km/h
-        case  5: gearRatio =  0.95f; break; // 5ª: Empuje alta velocidad, corte ~240 km/h
-        case  6: gearRatio =  0.82f; break; // 6ª: Overdrive velocidad máxima hasta ~250+ km/h
+        case  1: gearRatio =  3.80f; break; // 1ª: Mucha fuerza, corte ~58 km/h
+        case  2: gearRatio =  2.30f; break; // 2ª: Fuerza media-alta, corte ~105 km/h
+        case  3: gearRatio =  1.60f; break; // 3ª: Fuerza media, corte ~155 km/h
+        case  4: gearRatio =  1.20f; break; // 4ª: Crucero veloz, corte ~205 km/h
+        case  5: gearRatio =  0.98f; break; // 5ª: Empuje alta velocidad, corte ~245 km/h
+        case  6: gearRatio =  0.84f; break; // 6ª: Overdrive velocidad máxima hasta ~270 km/h
     }
 
     const float idleRpm = 900.0f;
@@ -149,12 +150,20 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
         float absSpeed = std::abs(speed_);
         float mechanicalRpm = absSpeed * std::abs(gearRatio) * finalDrive * kWheelToRpmFactor;
 
-        // Efecto 1: Si arrancás en marchas altas (3ª, 4ª, 5ª) desde parado sin embrague,
-        // las RPM caen por debajo del mínimo y el motor se ahoga / cala
-        if (!isStalled_ && gear_ >= 3 && absSpeed < 18.0f && input.throttle > 0.15f) {
+        // Calado realista del motor por exceso de marcha a baja velocidad (Lugging / Stalling):
+        // Solo si vas a velocidad excesivamente baja para la marcha (ej: detenido en 5ª)
+        if (!isStalled_ && gear_ >= 5 && absSpeed < 45.0f && input.throttle > 0.05f) {
             isStalled_ = true;
-            stallTimer_ = 1.3f;
+            stallTimer_ = 1.2f;
             pitch_ = -8.0f; // Tirón brusco al calarse
+        } else if (!isStalled_ && gear_ == 4 && absSpeed < 32.0f && input.throttle > 0.05f) {
+            isStalled_ = true;
+            stallTimer_ = 1.0f;
+            pitch_ = -7.0f;
+        } else if (!isStalled_ && gear_ == 3 && absSpeed < 20.0f && input.throttle > 0.05f) {
+            isStalled_ = true;
+            stallTimer_ = 0.8f;
+            pitch_ = -6.0f;
         }
 
         if (isStalled_) {
@@ -181,22 +190,20 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
     // =========================================================================
     // 3. CURVA DE TORQUE REALISTA DEL MOTOR
     // =========================================================================
-    // Curva de par deportiva: muy bajo en bajas RPM (<2.500), despunta a partir de 3.800,
-    // par máximo a 4.800 - 6.200 RPM, y decae al corte.
-    // Esto obliga a bajar a 2ª o 3ª para salir con potencia de las curvas lentas.
+    // Curva de par deportiva con buen rango en altas velocidades
     float rpmNorm = std::clamp((rpm_ - idleRpm) / (redlineRpm - idleRpm), 0.0f, 1.15f);
     float engineTorque = 0.0f;
-    if (rpmNorm < 0.25f) {
-        // Por debajo de ~2.400 RPM el motor no tiene empuje en marchas largas (se ahoga)
-        engineTorque = 0.12f + (rpmNorm / 0.25f) * 0.18f; // 0.12 a 0.30
-    } else if (rpmNorm < 0.55f) {
-        // Rango medio (2.500 a 4.400 RPM)
-        float t = (rpmNorm - 0.25f) / 0.30f;
-        engineTorque = 0.30f + t * 0.55f; // 0.30 a 0.85
-    } else if (rpmNorm <= 0.85f) {
-        engineTorque = 1.0f; // Zona dulce de competición (4.500 - 6.300 RPM)
+    if (rpmNorm < 0.22f) {
+        // En muy bajas RPM (<1.800 RPM)
+        engineTorque = 0.35f + (rpmNorm / 0.22f) * 0.30f; // 0.35 a 0.65
+    } else if (rpmNorm < 0.50f) {
+        // Rango medio
+        float t = (rpmNorm - 0.22f) / 0.28f;
+        engineTorque = 0.65f + t * 0.35f; // 0.65 a 1.00
+    } else if (rpmNorm <= 0.90f) {
+        engineTorque = 1.0f; // Zona de máxima potencia deportiva
     } else {
-        engineTorque = 1.0f - ((rpmNorm - 0.85f) / 0.30f) * 0.35f;
+        engineTorque = 1.0f - ((rpmNorm - 0.90f) / 0.25f) * 0.20f;
     }
 
     // =========================================================================
@@ -213,16 +220,15 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
 
     if (!isStalled_ && gear_ != 0 && input.throttle > 0.02f && clutchEngaged) {
         float totalRatio = std::abs(gearRatio) * finalDrive;
-        // En marchas largas (5ª y 6ª), si vas lento el motor carece de desmultiplicación:
-        float gearEfficiency = 1.0f;
-        if (gear_ >= 5 && std::abs(speed_) < 130.0f) {
-            gearEfficiency = std::clamp(std::abs(speed_) / 130.0f, 0.22f, 1.0f);
-        } else if (gear_ == 4 && std::abs(speed_) < 80.0f) {
-            gearEfficiency = std::clamp(std::abs(speed_) / 80.0f, 0.35f, 1.0f);
-        }
+        float baseMultiplier = 6.4f;
+        if (gear_ == 1) baseMultiplier = 7.4f;
+        else if (gear_ == 2) baseMultiplier = 6.8f;
+        else if (gear_ == 3) baseMultiplier = 6.4f;
+        else if (gear_ == 4) baseMultiplier = 6.0f;
+        else if (gear_ == 5) baseMultiplier = 5.8f;
+        else if (gear_ == 6) baseMultiplier = 5.5f;
 
-        float baseMultiplier = (gear_ == 1) ? 7.2f : (gear_ == 2 ? 6.5f : (gear_ == 3 ? 5.8f : (gear_ == 4 ? 5.0f : 4.4f)));
-        driveForce = (engineTorque * input.throttle) * (totalRatio * baseMultiplier) * gearEfficiency;
+        driveForce = (engineTorque * input.throttle) * (totalRatio * baseMultiplier);
 
         float curAbsSpeed = std::abs(speed_);
         if (curAbsSpeed >= gearMaxPhysicalSpeed) {
@@ -304,19 +310,28 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
     float absSpeedRatio = std::abs(speed_) / params_.maxSpeed;
 
 
-    // Agarre lateral receptivo y progresivo
-    float effectiveGrip = params_.grip * 1.35f;
-    if (isDrifting_) effectiveGrip *= 1.25f;
-    if (offRoad) effectiveGrip *= 0.6f;
+    // Agarre lateral deportivo y receptivo
+    float effectiveGrip = params_.grip * 2.2f;
+    if (isDrifting_) effectiveGrip *= 1.30f;
+    if (offRoad) effectiveGrip *= 0.65f;
 
-    // Desplazamiento lateral por dirección del jugador: giro ágil y fiel al volante
-    x_ += input.steering * effectiveGrip * std::max(0.35f, speedRatio) * dt;
+    // MODELO DE CURVAS JUGABLE:
+    // - A baja velocidad (80-120 km/h) el auto tiene buen agarre para doblar limpiamente en 2ª/3ª.
+    // - A alta velocidad (>140 km/h), la fuerza centrífuga (que crece al cuadrado) supera el agarre en curvas cerradas,
+    //   haciendo imposible pasar a fondo en 5ª marcha y forzando a frenar antes del vértice.
+    float speedRatioNorm = std::clamp(speed_ / params_.maxSpeed, 0.0f, 1.0f);
+    float steerAuthority = effectiveGrip * (0.35f + 0.65f * speedRatioNorm);
+    if (speed_ < 5.0f) steerAuthority *= speed_ / 5.0f; // detenido no se desplaza
+    float steerPush = input.steering * steerAuthority;
 
-    // Fuerza centrífuga física realista: aumenta fuertemente con la velocidad al cuadrado
-    // Exige frenar para curvas cerradas; si encaras una curva en 6ª a 200+ km/h te expulsará hacia afuera
-    float speedFactor = (speed_ / 130.0f);
-    float centrifugal = currentCurve * (speedFactor * speedFactor) * 0.72f;
-    x_ -= centrifugal * dt;
+    // Fuerza centrífuga calibrada: castiga intentar tomar curvas cerradas a más de 135 km/h
+    float centrifugal = currentCurve * speedRatioNorm * speedRatioNorm * 2.55f;
+
+    // INERCIA LATERAL: la velocidad lateral se acerca gradualmente al objetivo (~0.2s)
+    float targetLatVel = steerPush - centrifugal;
+    latVel_ += (targetLatVel - latVel_) * (1.0f - std::pow(0.0035f, dt));
+    x_ += latVel_ * dt;
+    if (x_ > 2.2f || x_ < -2.2f) latVel_ = 0.0f;
     x_ = std::clamp(x_, -2.2f, 2.2f);
 
     // Suavizado visual del volante para el renderizado (coincide 1:1 con el giro físico del volante)
@@ -326,15 +341,16 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
 
     // 4. Dinámica de Suspensión, Cabeceo (Pitch) y Balanceo (Roll) para POV
     float longitudinalAccel = (speed_ - prevSpeed) / dt;
-    float targetPitch = std::clamp(longitudinalAccel * 0.18f, -14.0f, 12.0f);
+    float targetPitch = std::clamp(longitudinalAccel * 0.12f, -8.0f, 8.0f);
     if (input.brake > 0.1f && speed_ > 5.0f) {
-        targetPitch -= input.brake * 9.5f;
+        targetPitch -= input.brake * 2.2f; // Cabeceo suave al frenar, sin sacudidas bruscas
     }
-    pitch_ += (targetPitch - pitch_) * (1.0f - std::pow(0.002f, dt));
+    pitch_ += (targetPitch - pitch_) * (1.0f - std::pow(0.005f, dt));
 
-    float lateralG = (input.steering * speedRatio * 1.4f) - (currentCurve * speedRatio * speedRatio * 0.28f);
-    float targetRoll = std::clamp(lateralG * 6.5f, -8.5f, 8.5f);
-    roll_ += (targetRoll - roll_) * (1.0f - std::pow(0.002f, dt));
+    // Fuerza G lateral e inclinación suave de la carrocería en curvas
+    float lateralG = (input.steering * speedRatio * 1.0f) - (currentCurve * speedRatio * 0.20f);
+    float targetRoll = std::clamp(lateralG * 4.0f, -7.0f, 7.0f);
+    roll_ += (targetRoll - roll_) * (1.0f - std::pow(0.005f, dt));
 
     // Fase de vibración de alta frecuencia según velocidad y terreno
     float freq = 14.0f + speedRatio * 28.0f + (offRoad ? 25.0f : 0.0f);
