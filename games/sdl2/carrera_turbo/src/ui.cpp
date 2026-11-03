@@ -568,7 +568,7 @@ void UserInterface::renderMinimap(const Road& road, float playerZ, int currentSe
 }
 
 void UserInterface::renderTimeAttackFinish(float bestLapTime, float totalSessionTime, float topSpeed, const std::vector<float>& lapTimes) {
-    int modalW = 1080;
+    int modalW = 1200;
     int modalH = 680;
     int modalX = 960 - modalW / 2;
     int modalY = 540 - modalH / 2;
@@ -576,11 +576,12 @@ void UserInterface::renderTimeAttackFinish(float bestLapTime, float totalSession
     renderer_.drawNeobrutalRect(modalX, modalY, modalW, modalH, {255, 255, 255, 255}, 6, 12);
 
     // Cabecera Neobrutalista
-    renderer_.drawNeobrutalRect(modalX + 50, modalY - 30, modalW - 100, 75, {250, 204, 21, 255}, 5, 8);
+    int headerW = 1060;
+    renderer_.drawNeobrutalRect(960 - headerW / 2, modalY - 30, headerW, 75, {250, 204, 21, 255}, 5, 8);
     renderer_.drawText(fontTitle_, "¡SESIÓN DE VUELTA RÁPIDA FINALIZADA!", 960, modalY - 22, {18, 18, 18, 255}, true);
 
     // Mejor Vuelta destacada en púrpura
-    int bestBoxW = 600;
+    int bestBoxW = 740;
     int bestBoxH = 90;
     int bestBoxY = modalY + 80;
     renderer_.drawNeobrutalRect(960 - bestBoxW / 2, bestBoxY, bestBoxW, bestBoxH, {168, 85, 247, 255}, 4, 6);
@@ -621,7 +622,8 @@ void UserInterface::renderTimeAttackFinish(float bestLapTime, float totalSession
     renderer_.drawText(fontTitle_, rank, 960, modalY + 460, {244, 63, 94, 255}, true);
 
     // Botones
-    renderer_.drawNeobrutalRect(960 - 260, modalY + 540, 520, 60, {34, 197, 94, 255}, 4, 6);
+    int btnXW = 660;
+    renderer_.drawNeobrutalRect(960 - btnXW / 2, modalY + 540, btnXW, 60, {34, 197, 94, 255}, 4, 6);
     renderer_.drawText(fontHud_, "Presiona [X] para Correr Otra Sesión", 960, modalY + 552, {18, 18, 18, 255}, true);
 
     renderer_.drawText(fontSmall_, "Presiona [O] o [ESC] para Salir al Menú", 960, modalY + 630, {107, 114, 128, 255}, true);
@@ -664,7 +666,8 @@ void UserInterface::renderFinish(float totalTime, float topSpeed, int checkpoint
     renderer_.drawText(fontTitle_, rank, 960, modalY + 315, {244, 63, 94, 255}, true);
 
     // Botones
-    renderer_.drawNeobrutalRect(960 - 260, modalY + 440, 520, 60, {250, 204, 21, 255}, 4, 6);
+    int finishBtnW = 640;
+    renderer_.drawNeobrutalRect(960 - finishBtnW / 2, modalY + 440, finishBtnW, 60, {250, 204, 21, 255}, 4, 6);
     renderer_.drawText(fontHud_, "Presiona [X] para Jugar de Nuevo", 960, modalY + 452, {18, 18, 18, 255}, true);
 
     renderer_.drawText(fontSmall_, "Presiona [O] o [ESC] para Salir al Menú", 960, modalY + 540, {107, 114, 128, 255}, true);
