@@ -37,8 +37,11 @@ void Car::reset() {
 void Car::triggerNitro() {
     if (nitroInventory_ > 0 && nitroTimer_ <= 0.0f) {
         nitroInventory_--;
-        nitroTimer_ = 3.5f; // 3.5 segundos de empuje bestial
-        pitch_ += 6.0f;     // Tirón hacia atrás al acelerar
+        nitroTimer_ = 1.4f; // Impulso concentrado estilo Champiñón de Mario Kart (~1.4s)
+        // Patada instantánea de velocidad (Instant Boost):
+        // Da un empujón directo de +65 km/h instantáneo hasta alcanzar o superar el tope
+        speed_ = std::min(speed_ + 65.0f, 260.0f);
+        pitch_ += 8.0f;     // Tirón hacia atrás al acelerar
     }
 }
 
@@ -427,6 +430,12 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
     if (nitroTimer_ > 0.0f) {
         nitroTimer_ -= dt;
         pitch_ += 1.8f; // Mantiene la trompa levantada mientras sopla el nitro
+        // Durante el impulso de nitro mantiene velocidad alta
+    } else {
+        // Al terminar el turbo, la velocidad decrece gradualmente a la velocidad natural de la marcha (estilo Mario Kart)
+        if (gear_ > 0 && speed_ > gearMaxPhysicalSpeed) {
+            speed_ = std::max(gearMaxPhysicalSpeed, speed_ - 55.0f * dt);
+        }
     }
 
     if (wiperActive_) {

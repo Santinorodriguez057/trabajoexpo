@@ -9,7 +9,7 @@ struct CarPhysics {
     // Parámetros ajustables
     float maxSpeed = 240.0f;       // km/h
     float accelPower = 70.0f;      // Aceleración suave y progresiva con inercia
-    float brakingPower = 110.0f;   // Tasa de frenado base progresiva
+    float brakingPower = 180.0f;   // Tasa de frenado contundente y eficaz
     float naturalDecel = 24.0f;    // Desaceleración suave y progresiva
     float offRoadDecel = 90.0f;    // Fricción en césped
     float grip = 3.6f;             // Agarre lateral en curvas

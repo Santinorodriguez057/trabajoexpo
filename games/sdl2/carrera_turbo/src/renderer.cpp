@@ -842,12 +842,12 @@ void Renderer::renderProp(const RoadProp& prop, int screenX, int screenY, float 
 
         int topY = screenY - postH - bH;
         drawNeobrutalRect(screenX - bW / 2, topY, bW, bH, boardColor, 4, 5);
-        // Franja decorativa diagonal/lateral
-        drawNeobrutalRect(screenX - bW / 2 + 6, topY + 6, bW / 4, bH - 12, accentColor, 2, 0);
+        // Franja decorativa central para contener las letras
+        drawNeobrutalRect(screenX - bW / 3, topY + 6, (bW * 2) / 3, bH - 12, accentColor, 2, 0);
 
-        if (bW > 85) {
+        if (bW > 70) {
             const char* label = (segIndex % 48 == 0) ? "TURBO" : "APEX";
-            drawText(fontSmall_, label, screenX + bW / 10, topY + bH / 2 - 12, {18, 18, 18, 255}, true);
+            drawText(fontSmall_, label, screenX, topY + bH / 2 - 12, {18, 18, 18, 255}, true);
         }
 
     } else if (prop.type == PropType::CHECKPOINT_ARCH) {

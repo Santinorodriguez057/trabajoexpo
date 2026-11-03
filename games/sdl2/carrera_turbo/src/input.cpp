@@ -351,14 +351,11 @@ void InputManager::update(float dt) {
             throttleInput = static_cast<float>(rawR2) / 32767.0f;
         }
 
-        // Freno: Botón L1 como primario (o pedal analógico si no se usa L2 para acelerar)
-        if (btnL1) {
+        // Freno: Botón L1 como primario, además de L2 si no acelera o Gatillo R1 / Círculo / Cuadrado
+        if (btnL1 || SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) ||
+            SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_B) ||
+            SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_X)) {
             brakeInput = 1.0f;
-        }
-
-        // Botón Cuadrado o X para freno de mano / derrape
-        if (SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_X)) {
-            handbrakeInput = true;
         }
     }
 

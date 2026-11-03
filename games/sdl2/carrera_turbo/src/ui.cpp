@@ -426,26 +426,26 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
     renderMinimap(road, car.getTrackZ(), currentSector, mapX, mapY, mapW, mapH);
 
     // 6. Indicadores de Estado de Mecánicas de Cabina Arcade (Nitro, Limpiaparabrisas y Motor)
-    // Ubicado en la esquina inferior izquierda del HUD
+    // Ubicado en la esquina inferior izquierda del HUD con ancho suficiente para que las letras no se salgan del marco
     int badgeX = 50;
     int badgeY = 960;
-    int badgeW = 260;
-    int badgeH = 75;
+    int badgeW = 400;
+    int badgeH = 80;
 
     // A. Indicador de Botellas de Nitro
     SDL_Color nitroCol = car.isNitroActive() ? SDL_Color{250, 204, 21, 255} : SDL_Color{14, 165, 233, 255};
     renderer_.drawNeobrutalRect(badgeX, badgeY, badgeW, badgeH, {18, 20, 26, 255}, 4, 6);
-    renderer_.drawNeobrutalRect(badgeX + 12, badgeY + 12, 50, 50, nitroCol, 2, 0);
-    renderer_.drawText(fontSmall_, "N2O", badgeX + 37, badgeY + 26, {18, 18, 18, 255}, true);
+    renderer_.drawNeobrutalRect(badgeX + 12, badgeY + 14, 52, 52, nitroCol, 2, 0);
+    renderer_.drawText(fontSmall_, "N2O", badgeX + 38, badgeY + 28, {18, 18, 18, 255}, true);
 
     char nitroBuf[64];
     if (car.isNitroActive()) {
         std::snprintf(nitroBuf, sizeof(nitroBuf), "NITRO: ACTIVO (%.1fs)", car.getNitroTimer());
     } else {
-        std::snprintf(nitroBuf, sizeof(nitroBuf), "NITRO: x%d [X0]", car.getNitroInventory());
+        std::snprintf(nitroBuf, sizeof(nitroBuf), "TURBO / NITRO: x%d [X0]", car.getNitroInventory());
     }
-    renderer_.drawText(fontSmall_, nitroBuf, badgeX + 75, badgeY + 16, nitroCol, false);
-    renderer_.drawText(fontSmall_, "Limpia: [X3] | Enfría: [X6/8]", badgeX + 75, badgeY + 44, {148, 163, 184, 255}, false);
+    renderer_.drawText(fontSmall_, nitroBuf, badgeX + 78, badgeY + 16, nitroCol, false);
+    renderer_.drawText(fontSmall_, "Limpia: [X3]  |  Enfría: [X8]", badgeX + 78, badgeY + 46, {148, 163, 184, 255}, false);
 }
 
 void UserInterface::renderMinimap(const Road& road, float playerZ, int currentSector, int mapX, int mapY, int mapW, int mapH) {
