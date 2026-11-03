@@ -165,14 +165,14 @@ void UserInterface::renderDifficultySelect(Difficulty selected) {
         "• Todo lo de Media incluido"
     };
     const char* sub2[3] = {
-        "• Motor indestructible (Sin rotura)",
+        "• Motor indestructible",
         "• Daño por mal cambio",
-        "• Botellas de Nitro / Turbo [X0]"
+        "• Botellas de Nitro / Turbo"
     };
     const char* sub3[3] = {
         "• Sin botones del Fight Stick",
-        "• Enfriamiento de motor [X8]",
-        "• Charcos y limpiaparabrisas [X3]"
+        "• Enfriamiento de motor",
+        "• Charcos y limpiaparabrisas"
     };
     SDL_Color cardTheme[3] = {
         {34, 197, 94, 255},   // Verde Esmeralda (Fácil)

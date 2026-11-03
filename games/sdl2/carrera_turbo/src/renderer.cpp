@@ -402,9 +402,11 @@ void Renderer::renderRoad(const Road& road, const Car& car, float horizonY, floa
         projected[n] = {sx, sy, sw, scale, static_cast<float>(viewH), fog, seg.curve};
 
         curRelX += ddx;
-        // Atenuación suave progresiva (smooth cosine/quadratic rolloff) hacia el infinito
-        if (n < static_cast<int>(kLookaheadMax)) {
-            float fade = 1.0f - (static_cast<float>(n) / kLookaheadMax);
+        // Atenuación suave continua usando la distancia continua real (n - basePercent)
+        // para que al cruzar un límite de segmento no exista ningún salto discreto
+        float distSegs = std::max(0.0f, static_cast<float>(n) - basePercent);
+        if (distSegs < kLookaheadMax) {
+            float fade = 1.0f - (distSegs / kLookaheadMax);
             float weight = fade * fade; // Suavizado C1 en el horizonte
             ddx += seg.curve * kCurveRender * weight;
         }

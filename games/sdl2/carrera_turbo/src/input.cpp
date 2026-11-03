@@ -295,30 +295,16 @@ void InputManager::update(float dt) {
             // La medición directa del acelerómetro terrestre da el ángulo real y absoluto sin deriva
             float targetAngle = -deltaAngle;
 
-            // ANTI-LATIGAZO AL FRENAR / ACELERAR:
-            // Al apretar L1/L2 el dedo empuja el mando: (a) gira un poco (pico en el gyro) y
-            // (b) lo sacude (pico en el acelerómetro que falsea el ángulo). Se protege así:
-            //  1. Si la aceleración total se aleja de 1g, el mando se está sacudiendo: no se usa el acelerómetro.
-            //  2. Durante 0.30s tras presionar/soltar un gatillo, el ángulo queda congelado.
-            //  3. Mientras se frena, el volante responde con un filtro más suave.
-            bool l1Now = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_LEFTSHOULDER) != 0;
-            bool l2Now = SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 600;
-            if (l1Now != prevL1_ || l2Now != prevL2_) pedalHoldTimer_ = 0.30f;
-            prevL1_ = l1Now;
-            prevL2_ = l2Now;
-
+            // Fusión continua (Complementary Filter) entre Giroscopio y Acelerómetro:
+            // NUNCA congelamos el ángulo al frenar/acelerar en una curva (eso causaba congelamiento y luego
+            // teletransportación brusca cuando terminaba el timer). En su lugar, filtramos suavemente sacudidas.
             float accelMag = std::sqrt(accel[0] * accel[0] + accel[1] * accel[1] + accel[2] * accel[2]);
-            bool shaking = std::abs(accelMag - 9.81f) > 1.2f;
+            bool shaking = std::abs(accelMag - 9.81f) > 2.2f;
 
-            if (pedalHoldTimer_ > 0.0f) {
-                pedalHoldTimer_ -= dt; // Ángulo congelado: se ignora el tirón del dedo
-            } else {
-                float gyroRate = (std::abs(gyro[1]) < 0.35f) ? 0.0f : gyro[1];
-                float accelWeight = shaking ? 0.0f : 0.20f;
-                float fused = (1.0f - accelWeight) * (currentRoll_ - gyroRate * dt) + accelWeight * targetAngle;
-                float follow = l1Now ? 0.35f : 1.0f; // Frenando: respuesta más suave
-                currentRoll_ += (fused - currentRoll_) * follow;
-            }
+            float gyroRate = (std::abs(gyro[1]) < 0.08f) ? 0.0f : gyro[1];
+            float accelWeight = shaking ? 0.04f : 0.18f;
+            float fused = (1.0f - accelWeight) * (currentRoll_ - gyroRate * dt) + accelWeight * targetAngle;
+            currentRoll_ += (fused - currentRoll_) * 0.85f;
 
             // Inclinación física real del volante en grados para visualización del cockpit
             state_.physicalAngleDeg = currentRoll_ * 57.2957795f;
