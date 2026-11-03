@@ -288,7 +288,7 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
     // 1. Contador de Vuelta - Esquina Superior Izquierda
     // Vuelta 1: Reconocimiento (Warmup) | Vuelta 2: Vuelta Rápida Oficial Cronometrada
     bool isRecon = (currentLap == 1);
-    int lapBoxW = isRecon ? 360 : 320;
+    int lapBoxW = 400;
     int lapBoxH = 70;
     int lapBoxX = 50;
     int lapBoxY = 35;
