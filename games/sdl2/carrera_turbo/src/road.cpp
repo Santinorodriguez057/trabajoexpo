@@ -236,51 +236,12 @@ void Road::generateTrack(bool isTimeAttack, bool enableNitroAndMud) {
     addStands(sector3 + 12, sector3 + 28, 1.0f); // Zona de chicane (Sector 3)
     addStands(nTotal - 28, nTotal - 8, -1.0f);  // Horquilla final y recta previa a meta
 
-    // Tráfico de coches rivales distribuidos en los 3 carriles
-    std::vector<SDL_Color> trafficColors = {
-        {250, 204, 21, 255}, // Amarillo Neón
-        {56, 189, 248, 255}, // Celeste Eléctrico
-        {244, 63, 94, 255},  // Rosa Neón
-        {168, 85, 247, 255}, // Púrpura Brutalista
-        {255, 255, 255, 255},// Blanco Puro
-        {34, 197, 94, 255}   // Verde Racing
-    };
-
-    const float laneOffsets[3] = {-0.66f, 0.0f, 0.66f};
-
-    int numCars = 20;
-    for (int i = 0; i < numCars; ++i) {
-        TrafficCar car;
-        car.z = 120.0f + i * 160.0f;
-        car.x = laneOffsets[i % 3];
-        car.speed = 85.0f + (i % 4) * 16.0f;
-        car.bodyColor = trafficColors[i % trafficColors.size()];
-        traffic_.push_back(car);
-    }
+    // Tráfico de coches desactivado para pista limpia
+    traffic_.clear();
 }
 
 void Road::enableTraffic(bool enable) {
     traffic_.clear();
-    if (!enable) return;
-
-    std::vector<SDL_Color> trafficColors = {
-        {250, 204, 21, 255}, // Amarillo Neón
-        {56, 189, 248, 255}, // Celeste Eléctrico
-        {244, 63, 94, 255},  // Rosa Neón
-        {168, 85, 247, 255}, // Púrpura Brutalista
-        {255, 255, 255, 255},// Blanco Puro
-        {34, 197, 94, 255}   // Verde Racing
-    };
-    const float laneOffsets[3] = {-0.66f, 0.0f, 0.66f};
-    int numCars = 20;
-    for (int i = 0; i < numCars; ++i) {
-        TrafficCar car;
-        car.z = 120.0f + i * 160.0f;
-        car.x = laneOffsets[i % 3];
-        car.speed = 85.0f + (i % 4) * 16.0f;
-        car.bodyColor = trafficColors[i % trafficColors.size()];
-        traffic_.push_back(car);
-    }
 }
 
 void Road::update(float dt) {
