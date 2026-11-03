@@ -360,7 +360,7 @@ void UserInterface::renderHud(const Car& car, float timeRemaining, int checkpoin
     }
 }
 
-void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int currentLap, int totalLaps, float currentLapTime, float bestLapTime, float lastLapTime, int currentSector, float sectorDelta, float sectorBannerTimer, Difficulty diff) {
+void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int currentLap, int totalLaps, float currentLapTime, float bestLapTime, float lastLapTime, int currentSector, float sectorDelta, float sectorBannerTimer, int completedSectorNotice, Difficulty diff) {
     // =========================================================================
     // HUD NEOBRUTALISTA DE VUELTA RÁPIDA / TIME ATTACK (F1 / Gran Turismo Style)
     // =========================================================================
@@ -430,26 +430,28 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
 
     // 4. Banner animado al cruzar Sector o Meta con Delta (+/- en verde o rojo)
     if (sectorBannerTimer > 0.0f) {
-        int bW = 620;
+        bool isLap2Start = (currentLap == 2 && currentSector == 1 && completedSectorNotice == 0 && lastLapTime > 0.0f);
+        int bW = isLap2Start ? 820 : 640;
         int bH = 75;
         int bannerX = 960 - bW / 2;
         int bannerY = 125;
 
         SDL_Color bannerCol = (sectorDelta <= 0.0f) ? SDL_Color{34, 197, 94, 255} : SDL_Color{239, 68, 68, 255};
-        if (currentLap == 2 && currentSector == 1 && lastLapTime > 0.0f) {
+        if (isLap2Start) {
             bannerCol = SDL_Color{250, 204, 21, 255}; // Amarillo para aviso de inicio de vuelta cronometrada
         }
         renderer_.drawNeobrutalRect(bannerX, bannerY, bW, bH, bannerCol, 4, 6);
 
         char deltaBuf[64];
-        if (currentLap == 2 && currentSector == 1 && lastLapTime > 0.0f) {
+        int secNum = (completedSectorNotice > 0) ? completedSectorNotice : currentSector;
+        if (isLap2Start) {
             std::snprintf(deltaBuf, sizeof(deltaBuf), "¡VUELTA CRONOMETRADA INICIADA!");
         } else if (bestLapTime >= 9990.0f) {
-            std::snprintf(deltaBuf, sizeof(deltaBuf), "SECTOR %d COMPLETADO", currentSector);
+            std::snprintf(deltaBuf, sizeof(deltaBuf), "SECTOR %d COMPLETADO", secNum);
         } else if (sectorDelta <= 0.0f) {
-            std::snprintf(deltaBuf, sizeof(deltaBuf), "SECTOR %d  •  %.2fs", currentSector, sectorDelta);
+            std::snprintf(deltaBuf, sizeof(deltaBuf), "SECTOR %d  •  %.2fs", secNum, sectorDelta);
         } else {
-            std::snprintf(deltaBuf, sizeof(deltaBuf), "SECTOR %d  •  +%.2fs", currentSector, sectorDelta);
+            std::snprintf(deltaBuf, sizeof(deltaBuf), "SECTOR %d  •  +%.2fs", secNum, sectorDelta);
         }
         renderer_.drawText(fontTitle_, deltaBuf, 960, bannerY + 14, {18, 18, 18, 255}, true);
     }

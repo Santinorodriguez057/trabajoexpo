@@ -33,7 +33,7 @@ public:
     void renderDifficultySelect(Difficulty selected);
     void renderCountdown(float countdownTimer);
     void renderHud(const Car& car, float timeRemaining, int checkpointNum, float bonusBannerTimer, bool isSplit = false, int playerNum = 1, float rivalGap = 0.0f);
-    void renderTimeAttackHud(const Car& car, const Road& road, int currentLap, int totalLaps, float currentLapTime, float bestLapTime, float lastLapTime, int currentSector, float sectorDelta, float sectorBannerTimer, Difficulty diff = Difficulty::HARD);
+    void renderTimeAttackHud(const Car& car, const Road& road, int currentLap, int totalLaps, float currentLapTime, float bestLapTime, float lastLapTime, int currentSector, float sectorDelta, float sectorBannerTimer, int completedSectorNotice = 0, Difficulty diff = Difficulty::HARD);
     void renderMinimap(const Road& road, float playerZ, int currentSector, int mapX, int mapY, int mapW, int mapH);
     void renderFinish(float totalTime, float topSpeed, int checkpointsPassed, bool victory, bool isSplit = false, int winnerPlayer = 0);
     void renderTimeAttackFinish(float bestLapTime, float totalSessionTime, float topSpeed, const std::vector<float>& lapTimes);

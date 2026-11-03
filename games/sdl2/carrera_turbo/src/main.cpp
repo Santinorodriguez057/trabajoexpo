@@ -139,6 +139,7 @@ int main(int argc, char** argv) {
 
     // Sectores y deltas (F1 Style)
     int currentSector = 1;
+    int completedSectorNotice = 0; // Sector que se acaba de completar (1, 2 o 3) para el cartel
     float currentSectorTime = 0.0f;
     float sectorDelta = 0.0f;
     float sectorBannerTimer = 0.0f;
@@ -379,6 +380,7 @@ int main(int argc, char** argv) {
                         if (prevTrackZ < s1Limit && car1.getTrackZ() >= s1Limit) {
                             float delta = (bestSectorTimes[0] < 9990.0f) ? (currentSectorTime - bestSectorTimes[0]) : 0.0f;
                             sectorDelta = delta;
+                            completedSectorNotice = 1; // Avisar que se completó el Sector 1
                             sectorBannerTimer = 2.4f;
                             if (currentSectorTime < bestSectorTimes[0]) bestSectorTimes[0] = currentSectorTime;
                             currentSectorTime = 0.0f;
@@ -395,6 +397,7 @@ int main(int argc, char** argv) {
                             // Al cruzar el límite del Sector 2, completamos Sector 2 y entramos a Sector 3
                             float delta = (bestSectorTimes[1] < 9990.0f) ? (currentSectorTime - bestSectorTimes[1]) : 0.0f;
                             sectorDelta = delta;
+                            completedSectorNotice = 2; // Avisar que se completó el Sector 2
                             sectorBannerTimer = 2.4f;
                             if (currentSectorTime < bestSectorTimes[1]) bestSectorTimes[1] = currentSectorTime;
                             currentSectorTime = 0.0f;
@@ -444,6 +447,7 @@ int main(int argc, char** argv) {
                                 car1.addDistance(-trackLength);
                                 currentLapTime = 0.0f;
                                 currentSectorTime = 0.0f;
+                                completedSectorNotice = 0; // Mostrar "¡VUELTA CRONOMETRADA INICIADA!"
                                 sectorBannerTimer = 3.0f;
                                 sectorDelta = 0.0f;
                                 currentSector = 1; // Volvemos a iniciar en Sector 1
@@ -569,10 +573,10 @@ int main(int argc, char** argv) {
         } else if (state == GameState::DIFFICULTY_SELECT) {
             ui.renderDifficultySelect(difficulty);
         } else if (state == GameState::COUNTDOWN) {
-            ui.renderTimeAttackHud(car1, road, currentLap, kTotalLaps, currentLapTime, bestLapTime, lastLapTime, currentSector, sectorDelta, sectorBannerTimer, difficulty);
+            ui.renderTimeAttackHud(car1, road, currentLap, kTotalLaps, currentLapTime, bestLapTime, lastLapTime, currentSector, sectorDelta, sectorBannerTimer, completedSectorNotice, difficulty);
             ui.renderCountdown(countdownTimer);
         } else if (state == GameState::RACING) {
-            ui.renderTimeAttackHud(car1, road, currentLap, kTotalLaps, currentLapTime, bestLapTime, lastLapTime, currentSector, sectorDelta, sectorBannerTimer, difficulty);
+            ui.renderTimeAttackHud(car1, road, currentLap, kTotalLaps, currentLapTime, bestLapTime, lastLapTime, currentSector, sectorDelta, sectorBannerTimer, completedSectorNotice, difficulty);
         } else if (state == GameState::FINISH) {
             ui.renderTimeAttackFinish(bestLapTime, raceTime, topSpeedAchieved1, completedLapTimes);
         } else if (state == GameState::GAME_OVER) {
