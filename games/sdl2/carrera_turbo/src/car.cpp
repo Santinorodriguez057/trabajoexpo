@@ -90,7 +90,7 @@ void Car::shiftDown() {
     }
 }
 
-void Car::update(float dt, const InputState& input, float currentCurve, bool manualTransmission) {
+void Car::update(float dt, const InputState& input, float currentCurve, bool manualTransmission, bool engineDamageEnabled) {
     if (dt <= 0.0f) dt = 0.016f;
     dt = std::min(dt, 0.05f);
 
@@ -131,8 +131,8 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
         pitch_ -= (gear_ > prevGear) ? 6.0f : -3.5f;
 
         // Si bajó de marcha a una velocidad excesiva para la nueva marcha (ej: bajar a 1ª o 2ª a más de su corte físico)
-        // se produce SOBRERRÉGIMEN / MOTOR ROTO:
-        if (gear_ < prevGear && gear_ > 0) {
+        // se produce SOBRERRÉGIMEN / MOTOR ROTO (si el daño está habilitado):
+        if (engineDamageEnabled && gear_ < prevGear && gear_ > 0) {
             float newGearMax = 60.0f;
             if (gear_ == 1) newGearMax = 58.0f;
             else if (gear_ == 2) newGearMax = 105.0f;

@@ -20,7 +20,7 @@ class Car {
 public:
     Car(const CarPhysics& params = CarPhysics{});
 
-    void update(float dt, const InputState& input, float currentCurve, bool manualTransmission = false);
+    void update(float dt, const InputState& input, float currentCurve, bool manualTransmission = true, bool engineDamageEnabled = true);
     void reset();
     void hitObstacle();
     void shiftUp();

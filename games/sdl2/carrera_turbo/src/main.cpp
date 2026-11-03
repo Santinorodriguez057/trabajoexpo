@@ -99,8 +99,9 @@ int main(int argc, char** argv) {
     // Nivel de dificultad inicial (por defecto DIFICIL para tener todo disponible, seleccionable al inicio)
     Difficulty difficulty = Difficulty::HARD;
 
-    // Control de transmisión manual: depende de la dificultad
-    bool p1ManualTransmission = (difficulty != Difficulty::EASY);
+    // Control de transmisión manual: siempre activa (en Fácil no se rompe el motor)
+    bool p1ManualTransmission = true;
+    bool p1EngineDamageEnabled = (difficulty != Difficulty::EASY);
 
     SoundManager sound;
     sound.init();
@@ -241,11 +242,12 @@ int main(int argc, char** argv) {
                     }
 
                     if (in1.confirm) {
-                        // Aplicar reglas del nivel de dificultad seleccionado
-                        // Fácil: automático, sin mecánicas fight stick
-                        // Media: manual con shifter + daño/enfriamiento por mal cambio
-                        // Difícil: manual + daño + nitro/turbo + charcos con limpiaparabrisas
-                        p1ManualTransmission = (difficulty != Difficulty::EASY);
+                        // Aplicar reglas del nivel de dificultad seleccionado:
+                        // Fácil: cambios manuales obligatorios, pero motor indestructible (sin daño por mal cambio)
+                        // Media: cambios manuales con daño de motor y enfriamiento [X8]
+                        // Difícil: manual con daño + nitro/turbo [X0] + charcos con limpiaparabrisas [X3]
+                        p1ManualTransmission = true;
+                        p1EngineDamageEnabled = (difficulty != Difficulty::EASY);
                         road.generateTrack(true, difficulty == Difficulty::HARD);
 
                         countdownTimer = 4.0f;
@@ -304,7 +306,7 @@ int main(int argc, char** argv) {
                 {
                     float curve1 = road.getInterpolatedCurve(car1.getTrackZ());
                     const RoadSegment& curSeg1 = road.findSegment(car1.getTrackZ());
-                    car1.update(dt, in1, curve1, p1ManualTransmission);
+                    car1.update(dt, in1, curve1, p1ManualTransmission, p1EngineDamageEnabled);
 
                     // DEBUG TEMPORAL: telemetría por consola con CT_DEBUG=1
                     {

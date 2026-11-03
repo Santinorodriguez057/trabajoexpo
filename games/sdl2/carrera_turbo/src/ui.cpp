@@ -160,12 +160,12 @@ void UserInterface::renderDifficultySelect(Difficulty selected) {
     // 3 Tarjetas de dificultad
     const char* titles[3] = {"FÁCIL", "MEDIA", "DIFÍCIL"};
     const char* sub1[3] = {
-        "• Solo dirección del volante",
+        "• Shifter secuencial (Palanca)",
         "• Shifter secuencial (Palanca)",
         "• Todo lo de Media incluido"
     };
     const char* sub2[3] = {
-        "• Marchas 100% automáticas",
+        "• Motor indestructible (Sin rotura)",
         "• Daño por mal cambio",
         "• Botellas de Nitro / Turbo [X0]"
     };
@@ -505,34 +505,27 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
     int mapY = 140;
     renderMinimap(road, car.getTrackZ(), currentSector, mapX, mapY, mapW, mapH);
 
-    // 6. Indicadores de Estado de Mecánicas de Cabina Arcade (Según nivel de Dificultad)
-    if (diff != Difficulty::EASY) {
+    // 6. Indicadores de Estado de Mecánicas de Cabina Arcade (Solo en Difícil para Nitro y Limpiaparabrisas)
+    if (diff == Difficulty::HARD) {
         int badgeX = 50;
         int badgeY = 960;
         int badgeW = 400;
         int badgeH = 80;
 
-        // A. Indicador de Botellas de Nitro (Solo en difícil)
+        // Indicador de Botellas de Nitro
         SDL_Color nitroCol = car.isNitroActive() ? SDL_Color{250, 204, 21, 255} : SDL_Color{14, 165, 233, 255};
         renderer_.drawNeobrutalRect(badgeX, badgeY, badgeW, badgeH, {18, 20, 26, 255}, 4, 6);
         renderer_.drawNeobrutalRect(badgeX + 12, badgeY + 14, 52, 52, nitroCol, 2, 0);
-        renderer_.drawText(fontSmall_, (diff == Difficulty::HARD) ? "N2O" : "RPM", badgeX + 38, badgeY + 28, {18, 18, 18, 255}, true);
+        renderer_.drawText(fontSmall_, "N2O", badgeX + 38, badgeY + 28, {18, 18, 18, 255}, true);
 
         char nitroBuf[64];
-        if (diff == Difficulty::HARD) {
-            if (car.isNitroActive()) {
-                std::snprintf(nitroBuf, sizeof(nitroBuf), "NITRO: ACTIVO (%.1fs)", car.getNitroTimer());
-            } else {
-                std::snprintf(nitroBuf, sizeof(nitroBuf), "TURBO / NITRO: x%d [X0]", car.getNitroInventory());
-            }
-            renderer_.drawText(fontSmall_, nitroBuf, badgeX + 78, badgeY + 16, nitroCol, false);
-            renderer_.drawText(fontSmall_, "Limpia: [X3]  |  Enfría: [X8]", badgeX + 78, badgeY + 46, {148, 163, 184, 255}, false);
+        if (car.isNitroActive()) {
+            std::snprintf(nitroBuf, sizeof(nitroBuf), "NITRO: ACTIVO (%.1fs)", car.getNitroTimer());
         } else {
-            // Dificultad MEDIA: Marchas manuales y enfriamiento
-            std::snprintf(nitroBuf, sizeof(nitroBuf), "MODO: TRANSMISIÓN MANUAL");
-            renderer_.drawText(fontSmall_, nitroBuf, badgeX + 78, badgeY + 16, {250, 204, 21, 255}, false);
-            renderer_.drawText(fontSmall_, "Palanca: Cambios | Enfría: [X8]", badgeX + 78, badgeY + 46, {148, 163, 184, 255}, false);
+            std::snprintf(nitroBuf, sizeof(nitroBuf), "TURBO / NITRO: x%d [X0]", car.getNitroInventory());
         }
+        renderer_.drawText(fontSmall_, nitroBuf, badgeX + 78, badgeY + 16, nitroCol, false);
+        renderer_.drawText(fontSmall_, "Limpia: [X3]  |  Enfría: [X8]", badgeX + 78, badgeY + 46, {148, 163, 184, 255}, false);
     }
 }
 
