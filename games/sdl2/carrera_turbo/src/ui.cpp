@@ -135,9 +135,11 @@ void UserInterface::renderCalibration(const InputState& input, int playerNum, bo
     renderer_.drawText(fontSmall_, angBuf, wheelCenterX, boxY + boxH - (isSplit ? 22 : 30), {250, 204, 21, 255}, true);
 
     // Botón de confirmación
+    int btnW = isSplit ? 620 : 800;
+    int btnH = isSplit ? 46 : 56;
     int btnY = isSplit ? (modalY + modalH - 52) : (modalY + modalH - 68);
-    renderer_.drawNeobrutalRect(960 - 280, btnY, 560, isSplit ? 45 : 55, {34, 197, 94, 255}, 4, 6);
-    renderer_.drawText(isSplit ? fontSmall_ : fontHud_, "SITUAR AL CENTRO Y PRESIONAR [X] O [ENTER]", 960, btnY + (isSplit ? 10 : 13), {18, 18, 18, 255}, true);
+    renderer_.drawNeobrutalRect(960 - btnW / 2, btnY, btnW, btnH, {34, 197, 94, 255}, 4, 6);
+    renderer_.drawText(isSplit ? fontSmall_ : fontHud_, "SITUAR AL CENTRO Y PRESIONAR [X] O [ENTER]", 960, btnY + (isSplit ? 10 : 12), {18, 18, 18, 255}, true);
 }
 
 void UserInterface::renderCountdown(float countdownTimer) {
@@ -315,7 +317,8 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
     // Etiqueta superior sobre la caja
     SDL_Color tagCol = isRecon ? SDL_Color{56, 189, 248, 255} : SDL_Color{34, 197, 94, 255};
     const char* tagText = isRecon ? "CALENTAMIENTO" : "TIEMPO OFICIAL";
-    renderer_.drawNeobrutalRect(960 - 80, timeBoxY - 14, 160, 26, tagCol, 2, 0);
+    int tagW = 210;
+    renderer_.drawNeobrutalRect(960 - tagW / 2, timeBoxY - 14, tagW, 26, tagCol, 2, 0);
     renderer_.drawText(fontSmall_, tagText, 960, timeBoxY - 10, {18, 18, 18, 255}, true);
 
     // 3. Tarjeta de Mejor Vuelta y Última Vuelta (Esquina Superior Derecha)
