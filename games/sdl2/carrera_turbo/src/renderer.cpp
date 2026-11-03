@@ -2025,12 +2025,12 @@ void Renderer::renderCockpit(const Car& car, const Road& road, float raceTime, i
         drawNeobrutalRect(viewW / 2 - bannerW / 2, by, bannerW, bannerH, alertCol, 4, 6);
         drawText(fontTitle_, "! SOBRERRÉGIMEN - MOTOR ROTO !", viewW / 2, by + 12, {18, 18, 18, 255}, true);
 
-        // Subtítulo con indicación de pulsar el botón X6
+        // Subtítulo con indicación de pulsar el botón para enfriar
         int subW = 540;
         int subH = 42;
         drawNeobrutalRect(viewW / 2 - subW / 2, by + bannerH + 8, subW, subH, {18, 18, 18, 240}, 2, 4);
         char coolBuf[96];
-        std::snprintf(coolBuf, sizeof(coolBuf), "PULSA BOTÓN [X6] REPETIDAMENTE (%d RESTANTES)", car.getCoolEngineTapsNeeded());
+        std::snprintf(coolBuf, sizeof(coolBuf), "PULSA BOTÓN DE ENFRIAMIENTO REPETIDAMENTE (%d RESTANTES)", car.getCoolEngineTapsNeeded());
         drawText(fontSmall_, coolBuf, viewW / 2, by + bannerH + 18, {254, 240, 138, 255}, true);
     }
 }

@@ -445,7 +445,7 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
         std::snprintf(nitroBuf, sizeof(nitroBuf), "NITRO: x%d [X0]", car.getNitroInventory());
     }
     renderer_.drawText(fontSmall_, nitroBuf, badgeX + 75, badgeY + 16, nitroCol, false);
-    renderer_.drawText(fontSmall_, "Limpia: [X3] | Enfría: [X6]", badgeX + 75, badgeY + 44, {148, 163, 184, 255}, false);
+    renderer_.drawText(fontSmall_, "Limpia: [X3] | Enfría: [X6/8]", badgeX + 75, badgeY + 44, {148, 163, 184, 255}, false);
 }
 
 void UserInterface::renderMinimap(const Road& road, float playerZ, int currentSector, int mapX, int mapY, int mapW, int mapH) {

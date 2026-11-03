@@ -426,7 +426,7 @@ void InputManager::update(float dt) {
         // Lectura de botones auxiliares de acción (Mecánicas solicitadas):
         // Botón 0: Nitro Boost
         // Botón 3: Limpiaparabrisas
-        // Botón 6 (o botón 5/7 en placas con offset): Enfriar motor / Ventilación
+        // Botón 8 (y fallback 6): Enfriar motor / Ventilación
         int totalBtns = SDL_JoystickNumButtons(arcadeStick_);
 
         // Imprimir en terminal si se pulsa cualquier botón del stick para verificar ID físico
@@ -452,11 +452,11 @@ void InputManager::update(float dt) {
             prevArcadeBtn3_ = btn3;
         }
         if (totalBtns > 6) {
-            // Acepta botón 6 (o botón 5 si la serigrafía empezaba en 1)
-            bool btn6 = (SDL_JoystickGetButton(arcadeStick_, 6) != 0) ||
-                        (totalBtns > 5 && SDL_JoystickGetButton(arcadeStick_, 5) != 0);
-            if (btn6 && !prevArcadeBtn6_) state_.coolEngineTap = true;
-            prevArcadeBtn6_ = btn6;
+            // Mapeado a ID 8 (con fallback a 6 por compatibilidad)
+            bool btnCool = (totalBtns > 8 && SDL_JoystickGetButton(arcadeStick_, 8) != 0) ||
+                           (SDL_JoystickGetButton(arcadeStick_, 6) != 0);
+            if (btnCool && !prevArcadeBtn6_) state_.coolEngineTap = true;
+            prevArcadeBtn6_ = btnCool;
         }
     }
 }
