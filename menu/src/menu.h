@@ -21,23 +21,25 @@ constexpr int LOGICAL_HEIGHT = 1080;
 
 // Colores de fondo de cada Splash Screen
 constexpr SDL_Color SPLASH1_BG_COLOR = {255, 255, 255, 255}; // Blanco sólido (#FFFFFF) para ITF
-constexpr SDL_Color SPLASH2_BG_COLOR = {18, 20, 26, 255};    // Fondo oscuro elegante para Mi Logo (configurable)
+constexpr SDL_Color SPLASH2_BG_COLOR = {10, 12, 18, 255};    // Fondo oscuro profundo para resaltar el borde del logo y los nombres
 
-// Escala de los logos respecto al ancho de la pantalla (~55 % de la ventana, sin deformar)
-constexpr float SPLASH_LOGO_MAX_W_RATIO = 0.55f;
-constexpr float SPLASH_LOGO_MAX_H_RATIO = 0.60f;
+// Escala de los logos respecto al ancho/alto de la pantalla (sin deformar)
+constexpr float SPLASH_LOGO_MAX_W_RATIO  = 0.56f;
+constexpr float SPLASH_LOGO_MAX_H_RATIO  = 0.62f;
+constexpr float SPLASH2_LOGO_MAX_W_RATIO = 0.68f;
+constexpr float SPLASH2_LOGO_MAX_H_RATIO = 0.80f;
 
-// Tiempos de cada Splash Screen (en segundos)
-constexpr float SPLASH_FADE_IN_DURATION  = 0.6f; // Fade in 0.6 s
-constexpr float SPLASH_HOLD_DURATION     = 2.0f; // Permanece 2.0 s
-constexpr float SPLASH_FADE_OUT_DURATION = 0.6f; // Fade out 0.6 s
-constexpr float SPLASH_SKIP_MARGIN       = 0.3f; // Margen inicial para evitar saltos accidentales
+// Tiempos de cada Splash Screen (en segundos) — extendidos para mayor apreciación
+constexpr float SPLASH_FADE_IN_DURATION  = 0.85f; // Fade in 0.85 s
+constexpr float SPLASH_HOLD_DURATION     = 3.40f; // Permanece 3.40 s
+constexpr float SPLASH_FADE_OUT_DURATION = 0.85f; // Fade out 0.85 s
+constexpr float SPLASH_SKIP_MARGIN       = 0.35f; // Margen inicial para evitar saltos accidentales
 
-// Parámetros de la Animación Épica de Intro (~4.0 s en total)
-constexpr float INTRO_PHASE1_END    = 1.0f; // (0.0-1.0 s) Pantalla oscura + línea de luz horizontal
-constexpr float INTRO_PHASE2_END    = 2.0f; // (1.0-2.0 s) Wipe de barras neobrutalistas + zoom (1.15 -> 1.0)
-constexpr float INTRO_PHASE3_END    = 3.0f; // (2.0-3.0 s) Golpe del título (3x -> 1x ease-out-back) + flash + shake
-constexpr float INTRO_PHASE4_END    = 4.0f; // (3.0-4.0 s) Chispas/partículas + rayos radiales + shine sweep
+// Parámetros de la Animación Épica de Intro (~5.2 s en total)
+constexpr float INTRO_PHASE1_END    = 1.2f; // (0.0-1.2 s) Pantalla oscura + línea de luz horizontal
+constexpr float INTRO_PHASE2_END    = 2.5f; // (1.2-2.5 s) Wipe de barras neobrutalistas + zoom (1.15 -> 1.0)
+constexpr float INTRO_PHASE3_END    = 3.8f; // (2.5-3.8 s) Golpe del título (3x -> 1x ease-out-back) + flash + shake
+constexpr float INTRO_PHASE4_END    = 5.2f; // (3.8-5.2 s) Chispas/partículas + rayos radiales + shine sweep
 constexpr float INTRO_SKIP_MARGIN   = 0.25f;
 
 constexpr int   INTRO_WIPE_BARS         = 9;     // Cantidad de barras gruesas del wipe neobrutalista

@@ -121,7 +121,7 @@ void Menu::initSponsorSlides() {
         },
         // Slide 1: PANTALLA 2 – Mi Logo (Color de fondo en constante SPLASH2_BG_COLOR)
         {
-            "Mi Logo",
+            "Mi Logo (Santino Rodriguez y Ciro Doño)",
             {
                 "assets/sponsors/mi_logo.png",
                 "assets/sponsors/logo.png",
@@ -132,8 +132,8 @@ void Menu::initSponsorSlides() {
                 "../../assets/sponsors/mi_logo.png"
             },
             SPLASH2_BG_COLOR,
-            SPLASH_LOGO_MAX_W_RATIO,
-            SPLASH_LOGO_MAX_H_RATIO
+            SPLASH2_LOGO_MAX_W_RATIO,
+            SPLASH2_LOGO_MAX_H_RATIO
         }
     };
 
@@ -456,14 +456,14 @@ void Menu::updateIntroEpica(float dt) {
     float prevTimer = introTimer_;
     introTimer_ += dt;
 
-    // Al entrar en la Fase 2 (1.0 s), comenzamos el fade-in de 1.5 s de la música
-    // para que alcance su plenitud justo cuando el título impacta en 2.0 s - 2.3 s
+    // Al entrar en la Fase 2, comenzamos el fade-in de 1.5 s de la música
+    // para que alcance su plenitud justo cuando el título impacta en Fase 3
     if (prevTimer < INTRO_PHASE1_END && introTimer_ >= INTRO_PHASE1_END) {
         startMenuMusicWithFadeIn();
     }
 
-    // El título entra desde 3x a 1x entre 2.0 s y 2.35 s, produciendo el impacto síncrono
-    constexpr float kImpactMoment = 2.32f;
+    // El título entra desde 3x a 1x en los primeros 0.35s de Fase 3, produciendo el impacto síncrono
+    const float kImpactMoment = INTRO_PHASE2_END + 0.35f;
     if (!hitTriggered_ && introTimer_ >= kImpactMoment) {
         hitTriggered_ = true;
         flashFramesRemaining_ = INTRO_FLASH_FRAMES;
@@ -875,31 +875,32 @@ void Menu::renderIntroEpica() {
     // ========================================================================
 
     // Rayos de luz radiales girando lento detrás del título (aparecen tras el impacto)
+    const float kImpactMoment = INTRO_PHASE2_END + 0.35f;
     if (hitTriggered_) {
-        float rayFade = std::clamp((introTimer_ - 2.32f) / 0.45f, 0.0f, 1.0f);
+        float rayFade = std::clamp((introTimer_ - kImpactMoment) / 0.50f, 0.0f, 1.0f);
         // En la recta final hacia PULSA_X suavizamos los rayos para empalmar limpio
-        if (introTimer_ > 3.5f) {
-            rayFade *= std::clamp(1.0f - (introTimer_ - 3.5f) / 0.5f, 0.25f, 1.0f);
+        if (introTimer_ > INTRO_PHASE4_END - 0.6f) {
+            rayFade *= std::clamp(1.0f - (introTimer_ - (INTRO_PHASE4_END - 0.6f)) / 0.6f, 0.25f, 1.0f);
         }
         renderSunburstRays(LOGICAL_WIDTH / 2 + shakeX, 320 + shakeY, globalTime_ * 0.35f, rayFade);
     }
 
-    // Escala del título entrando con golpe (3x -> 1x con ease-out-back en los primeros 0.32s de Fase 3)
+    // Escala del título entrando con golpe (3x -> 1x con ease-out-back en los primeros 0.35s de Fase 3)
     float slamElapsed = introTimer_ - INTRO_PHASE2_END;
-    float slamT = std::clamp(slamElapsed / 0.32f, 0.0f, 1.0f);
+    float slamT = std::clamp(slamElapsed / 0.35f, 0.0f, 1.0f);
     float titleScale = INTRO_TITLE_SCALE_START + (1.0f - INTRO_TITLE_SCALE_START) * easeOutBack(slamT);
 
-    // Progreso del brillo que recorre las letras (Shine Sweep entre 3.0 s y 3.85 s)
+    // Progreso del brillo que recorre las letras (Shine Sweep en Fase 4)
     float shineProgress = -1.0f;
     if (introTimer_ >= INTRO_PHASE3_END) {
-        shineProgress = (introTimer_ - INTRO_PHASE3_END) / 0.85f;
+        shineProgress = (introTimer_ - INTRO_PHASE3_END) / 1.10f;
     }
 
     renderTitleBanner(titleScale, shakeX, shakeY, shineProgress);
 
     // Subtítulo aparece suavemente tras el golpe
-    if (introTimer_ >= 2.45f) {
-        float subAlphaNorm = std::clamp((introTimer_ - 2.45f) / 0.4f, 0.0f, 1.0f);
+    if (introTimer_ >= kImpactMoment + 0.15f) {
+        float subAlphaNorm = std::clamp((introTimer_ - (kImpactMoment + 0.15f)) / 0.45f, 0.0f, 1.0f);
         renderText("EXPERIENCIA SENSORIAL INTERACTIVA",
                    LOGICAL_WIDTH / 2 + shakeX, 480 + shakeY,
                    SDL_Color{80, 80, 80, 255}, 0.45f, true,
