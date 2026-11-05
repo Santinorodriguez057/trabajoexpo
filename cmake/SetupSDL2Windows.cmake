@@ -10,10 +10,11 @@ endif()
 find_package(SDL2 QUIET)
 find_package(SDL2_ttf QUIET)
 find_package(SDL2_mixer QUIET)
+find_package(SDL2_image QUIET)
 
 set(WINDOWS_DEPS_DIR "${CMAKE_SOURCE_DIR}/windows_deps")
 
-if(NOT SDL2_FOUND OR NOT SDL2_ttf_FOUND OR NOT SDL2_mixer_FOUND)
+if(NOT SDL2_FOUND OR NOT SDL2_ttf_FOUND OR NOT SDL2_mixer_FOUND OR NOT SDL2_image_FOUND)
     message(STATUS "[Windows SDL2] Dependencias no encontradas en el sistema. Configurando en ${WINDOWS_DEPS_DIR}...")
     file(MAKE_DIRECTORY "${WINDOWS_DEPS_DIR}")
 
@@ -37,6 +38,7 @@ if(NOT SDL2_FOUND OR NOT SDL2_ttf_FOUND OR NOT SDL2_mixer_FOUND)
     set(SDL2_VERSION "2.30.8")
     set(SDL2_TTF_VERSION "2.22.0")
     set(SDL2_MIXER_VERSION "2.8.0")
+    set(SDL2_IMAGE_VERSION "2.8.2")
 
     macro(download_and_extract_sdl DEP_NAME VERSION URL_PREFIX FOLDER_NAME)
         set(_ZIP_NAME "${DEP_NAME}-devel-${VERSION}-${SDL_FLAVOR}.zip")
@@ -81,17 +83,23 @@ if(NOT SDL2_FOUND OR NOT SDL2_ttf_FOUND OR NOT SDL2_mixer_FOUND)
         "https://github.com/libsdl-org/SDL_mixer/releases/download"
         "SDL2_mixer")
 
+    download_and_extract_sdl("SDL2_image" "${SDL2_IMAGE_VERSION}"
+        "https://github.com/libsdl-org/SDL_image/releases/download"
+        "SDL2_image")
+
     if(MINGW)
         list(APPEND CMAKE_PREFIX_PATH
             "${WINDOWS_DEPS_DIR}/SDL2-${SDL2_VERSION}/${SDL_ARCH_TAG}"
             "${WINDOWS_DEPS_DIR}/SDL2_ttf-${SDL2_TTF_VERSION}/${SDL_ARCH_TAG}"
             "${WINDOWS_DEPS_DIR}/SDL2_mixer-${SDL2_MIXER_VERSION}/${SDL_ARCH_TAG}"
+            "${WINDOWS_DEPS_DIR}/SDL2_image-${SDL2_IMAGE_VERSION}/${SDL_ARCH_TAG}"
         )
     else()
         list(APPEND CMAKE_PREFIX_PATH
             "${WINDOWS_DEPS_DIR}/SDL2-${SDL2_VERSION}"
             "${WINDOWS_DEPS_DIR}/SDL2_ttf-${SDL2_TTF_VERSION}"
             "${WINDOWS_DEPS_DIR}/SDL2_mixer-${SDL2_MIXER_VERSION}"
+            "${WINDOWS_DEPS_DIR}/SDL2_image-${SDL2_IMAGE_VERSION}"
         )
     endif()
 

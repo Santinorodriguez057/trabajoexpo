@@ -1,5 +1,9 @@
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include <SDL_mixer.h>
+#if defined(HAVE_SDL2_IMAGE)
+#include <SDL_image.h>
+#endif
 
 #include <cstdio>
 #include <cstdlib>
@@ -57,36 +61,57 @@ int main(int argc, char** argv) {
     } else {
         std::fclose(testF);
     }
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0) {
-        std::fprintf(stderr, "SDL_Init fallo: %s\n", SDL_GetError());
-        return 1;
+
+    // Inicializamos vídeo, mandos y audio (el audio es opcional para no fallar si no hay placa de sonido)
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO) < 0) {
+        std::fprintf(stderr, "Aviso: SDL_Init con AUDIO fallo (%s), reintentando sin audio...\n", SDL_GetError());
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0) {
+            std::fprintf(stderr, "SDL_Init fallo: %s\n", SDL_GetError());
+            return 1;
+        }
     }
+
     if (TTF_Init() < 0) {
         std::fprintf(stderr, "TTF_Init fallo: %s\n", TTF_GetError());
         SDL_Quit();
         return 1;
     }
 
+#if defined(HAVE_SDL2_IMAGE)
+    // Inicializar soporte PNG en SDL_image de forma segura
+    int imgFlags = IMG_INIT_PNG;
+    if ((IMG_Init(imgFlags) & imgFlags) != imgFlags) {
+        std::fprintf(stderr, "Aviso: IMG_Init(PNG) no pudo cargar soporte completo: %s\n", IMG_GetError());
+    }
+#endif
+
     SDL_Window* win = SDL_CreateWindow("Mini Juegos", SDL_WINDOWPOS_CENTERED,
-                                       SDL_WINDOWPOS_CENTERED, 960, 640, SDL_WINDOW_FULLSCREEN_DESKTOP);
+                                       SDL_WINDOWPOS_CENTERED, 1280, 720,
+                                       SDL_WINDOW_FULLSCREEN_DESKTOP | SDL_WINDOW_RESIZABLE);
     if (!win) {
         std::fprintf(stderr, "No se pudo crear la ventana: %s\n", SDL_GetError());
+#if defined(HAVE_SDL2_IMAGE)
+        IMG_Quit();
+#endif
         TTF_Quit();
         SDL_Quit();
         return 1;
     }
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1"); // Activa Anti-Aliasing (Linear Filtering)
-    
+
     SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!ren) {
         std::fprintf(stderr, "No se pudo crear el renderer: %s\n", SDL_GetError());
         SDL_DestroyWindow(win);
+#if defined(HAVE_SDL2_IMAGE)
+        IMG_Quit();
+#endif
         TTF_Quit();
         SDL_Quit();
         return 1;
     }
-    
-    // Mantiene la resolucion interna full HD
+
+    // Mantiene la resolución lógica independiente Full HD (1920x1080) en ventana y pantalla completa
     SDL_RenderSetLogicalSize(ren, 1920, 1080);
 
     TTF_Font* font = loadFont();
@@ -105,6 +130,9 @@ int main(int argc, char** argv) {
     if (font) TTF_CloseFont(font);
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);
+#if defined(HAVE_SDL2_IMAGE)
+    IMG_Quit();
+#endif
     TTF_Quit();
     SDL_Quit();
     return result;
