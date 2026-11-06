@@ -34,6 +34,9 @@ public:
     void setController(SDL_GameController* gc);
     SDL_GameController* getController() const { return controller_; }
 
+    void setArcadeStick(SDL_Joystick* joy);
+    SDL_Joystick* getArcadeStick() const { return arcadeStick_; }
+
     void update(float dt, int screenW, int screenH);
     void handleEvent(const SDL_Event& ev, int screenW, int screenH);
 
@@ -46,6 +49,8 @@ public:
     float getFingerX() const { return currentX_; }
     float getFingerY() const { return currentY_; }
 
+    bool isConnected() const { return controller_ != nullptr || arcadeStick_ != nullptr; }
+
     void triggerHaptic(float low, float high, Uint32 ms);
     void setLED(Uint8 r, Uint8 g, Uint8 b);
 
@@ -53,6 +58,12 @@ private:
     int playerIndex_ = 0;
     SDL_Color color_;
     SDL_GameController* controller_ = nullptr;
+    SDL_Joystick* arcadeStick_ = nullptr;
+
+    // Estado del joystick arcade / Fight stick
+    float arcadeCursorX_ = 960.0f;
+    float arcadeCursorY_ = 540.0f;
+    bool arcadeSlashing_ = false;
 
     bool fingerDown_ = false;
     float currentX_ = 0.0f;
@@ -64,3 +75,4 @@ private:
     std::vector<SlashSegment> activeSlashes_;
     std::vector<SlashTrailPoint> trailPoints_;
 };
+

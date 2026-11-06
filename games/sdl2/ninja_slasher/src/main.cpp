@@ -129,19 +129,50 @@ int main(int argc, char* argv[]) {
     TouchInput touchP1(0, CyberTheme::cP1Cyan);
     TouchInput touchP2(1, CyberTheme::cP2Pink);
 
-    // Conectar mandos disponibles
-    int numJoysticks = SDL_NumJoysticks();
-    int assigned = 0;
-    for (int i = 0; i < numJoysticks && assigned < 2; ++i) {
-        if (SDL_IsGameController(i)) {
-            SDL_GameController* gc = SDL_GameControllerOpen(i);
-            if (gc) {
-                if (assigned == 0) touchP1.setController(gc);
-                else if (assigned == 1) touchP2.setController(gc);
-                assigned++;
+    // Detección automática unificada: mandos DualShock 4 prioritarios y Fight Sticks arcade
+    auto autoAssignControllers = [&]() {
+        // Cerrar mandos previos
+        touchP1.setController(nullptr);
+        touchP1.setArcadeStick(nullptr);
+        touchP2.setController(nullptr);
+        touchP2.setArcadeStick(nullptr);
+
+        int totalJoys = SDL_NumJoysticks();
+        std::vector<SDL_GameController*> ds4Controllers;
+        std::vector<SDL_Joystick*> generalSticks;
+
+        for (int i = 0; i < totalJoys; ++i) {
+            if (SDL_IsGameController(i)) {
+                SDL_GameController* gc = SDL_GameControllerOpen(i);
+                if (gc) {
+                    ds4Controllers.push_back(gc);
+                }
+            } else {
+                SDL_Joystick* stick = SDL_JoystickOpen(i);
+                if (stick) {
+                    generalSticks.push_back(stick);
+                }
             }
         }
-    }
+
+        // Asignar a Jugador 1
+        if (!ds4Controllers.empty()) {
+            touchP1.setController(ds4Controllers[0]);
+        } else if (!generalSticks.empty()) {
+            touchP1.setArcadeStick(generalSticks[0]);
+        }
+
+        // Asignar a Jugador 2
+        if (ds4Controllers.size() >= 2) {
+            touchP2.setController(ds4Controllers[1]);
+        } else if (ds4Controllers.size() == 1 && !generalSticks.empty()) {
+            touchP2.setArcadeStick(generalSticks[0]);
+        } else if (generalSticks.size() >= 2) {
+            touchP2.setArcadeStick(generalSticks[1]);
+        }
+    };
+
+    autoAssignControllers();
 
     GameRenderer gameRen(renderer, fontTitle, fontHud, fontSmall);
     Spawner spawner(kWidth, kHeight);
@@ -180,19 +211,10 @@ int main(int argc, char* argv[]) {
                 break;
             }
 
-            // Detección de mandos conectados/desconectados
-            if (ev.type == SDL_CONTROLLERDEVICEADDED) {
-                if (!touchP1.getController()) {
-                    touchP1.setController(SDL_GameControllerOpen(ev.cdevice.which));
-                } else if (!touchP2.getController()) {
-                    touchP2.setController(SDL_GameControllerOpen(ev.cdevice.which));
-                }
-            } else if (ev.type == SDL_CONTROLLERDEVICEREMOVED) {
-                if (touchP1.getController() && ev.cdevice.which == SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(touchP1.getController()))) {
-                    touchP1.setController(nullptr);
-                } else if (touchP2.getController() && ev.cdevice.which == SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(touchP2.getController()))) {
-                    touchP2.setController(nullptr);
-                }
+            // Detección automática en caliente de mandos conectados/desconectados
+            if (ev.type == SDL_CONTROLLERDEVICEADDED || ev.type == SDL_CONTROLLERDEVICEREMOVED ||
+                ev.type == SDL_JOYDEVICEADDED || ev.type == SDL_JOYDEVICEREMOVED) {
+                autoAssignControllers();
             }
 
             // Tecla de salida rápida / volver al menú
@@ -212,6 +234,8 @@ int main(int argc, char* argv[]) {
         }
 
         // --- ACTUALIZACIÓN SEGÚN ESTADO ---
+        int connectedPlayers = (touchP1.isConnected() ? 1 : 0) + (touchP2.isConnected() ? 1 : 0);
+
         if (state == GameState::MODE_SELECT) {
             touchP1.update(dtReal, kWidth, kHeight);
             touchP2.update(dtReal, kWidth, kHeight);
@@ -220,19 +244,42 @@ int main(int argc, char* argv[]) {
             bool startSolo = false;
             bool start1v1  = false;
 
-            if (touchP1.isFingerDown() && !touchP2.isFingerDown()) {
-                if (touchP1.getFingerX() < kWidth * 0.5f) startSolo = true;
-                else start1v1 = true;
-            }
-            if (touchP1.getController() && SDL_GameControllerGetButton(touchP1.getController(), SDL_CONTROLLER_BUTTON_A)) {
-                startSolo = true;
-            }
-            if (touchP2.getController() && SDL_GameControllerGetButton(touchP2.getController(), SDL_CONTROLLER_BUTTON_A)) {
-                start1v1 = true;
+            if (connectedPlayers >= 2) {
+                // Si hay 2 mandos conectados, puede elegir Solo o 1v1 tocando su mitad o con botón
+                if (touchP1.isFingerDown() && !touchP2.isFingerDown()) {
+                    if (touchP1.getFingerX() < kWidth * 0.5f) startSolo = true;
+                    else start1v1 = true;
+                }
+                if (touchP1.getController() && SDL_GameControllerGetButton(touchP1.getController(), SDL_CONTROLLER_BUTTON_A)) {
+                    startSolo = true;
+                }
+                if (touchP2.getController() && SDL_GameControllerGetButton(touchP2.getController(), SDL_CONTROLLER_BUTTON_A)) {
+                    start1v1 = true;
+                }
+                if (touchP2.isFingerDown()) {
+                    start1v1 = true;
+                }
+            } else {
+                // Con 1 solo mando/stick conectado: arranca automáticamente en Modo Solo al tocar
+                if (touchP1.isFingerDown()) {
+                    startSolo = true;
+                }
+                if (touchP1.getController() && SDL_GameControllerGetButton(touchP1.getController(), SDL_CONTROLLER_BUTTON_A)) {
+                    startSolo = true;
+                }
+                if (touchP1.getArcadeStick()) {
+                    int nb = SDL_JoystickNumButtons(touchP1.getArcadeStick());
+                    for (int b = 0; b < nb && b < 4; ++b) {
+                        if (SDL_JoystickGetButton(touchP1.getArcadeStick(), b)) {
+                            startSolo = true;
+                            break;
+                        }
+                    }
+                }
             }
 
             if (startSolo || start1v1) {
-                isVersus = start1v1;
+                isVersus = start1v1 && (connectedPlayers >= 2);
                 state = GameState::PLAYING;
                 matchTimer = 60.0f;
                 scoreSys.reset();
@@ -375,19 +422,29 @@ int main(int argc, char* argv[]) {
             int by = kHeight / 2 - boxH / 2;
             gameRen.drawNeobrutalRect(bx, by, boxW, boxH, CyberTheme::cWhite, 5, 8);
             gameRen.drawText(fontTitle, "NINJA SLASHER", kWidth / 2, by + 40, CyberTheme::cBlack, true);
-            gameRen.drawText(fontSmall, "DESLIZA EL DEDO POR EL TOUCHPAD COMO UNA KATANA", kWidth / 2, by + 115, CyberTheme::cBlack, true);
+            
+            std::string statusText = (connectedPlayers >= 2) ? "2 DISPOSITIVOS DETECTADOS - ELIGE MODO" : "1 DISPOSITIVO DETECTADO - MODO SOLO";
+            gameRen.drawText(fontSmall, statusText, kWidth / 2, by + 115, (connectedPlayers >= 2) ? CyberTheme::cGreen : CyberTheme::cBlack, true);
 
-            // Opción 1: MODO SOLO (3 VIDAS)
-            gameRen.drawNeobrutalRect(bx + 60, by + 175, 330, 210, CyberTheme::cP1Cyan, 4, 6);
-            gameRen.drawText(fontHud, "MODO SOLO", bx + 225, by + 205, CyberTheme::cBlack, true);
-            gameRen.drawText(fontSmall, "3 VIDAS", bx + 225, by + 255, CyberTheme::cBlack, true);
-            gameRen.drawText(fontSmall, "TOCA LA IZQUIERDA", bx + 225, by + 315, CyberTheme::cBlack, true);
+            if (connectedPlayers >= 2) {
+                // Opción 1: MODO SOLO (3 VIDAS)
+                gameRen.drawNeobrutalRect(bx + 60, by + 175, 330, 210, CyberTheme::cP1Cyan, 4, 6);
+                gameRen.drawText(fontHud, "MODO SOLO", bx + 225, by + 205, CyberTheme::cBlack, true);
+                gameRen.drawText(fontSmall, "3 VIDAS", bx + 225, by + 255, CyberTheme::cBlack, true);
+                gameRen.drawText(fontSmall, "TOCA LA IZQUIERDA", bx + 225, by + 315, CyberTheme::cBlack, true);
 
-            // Opción 2: MODO 1V1 VERSUS (60 SEGUNDOS)
-            gameRen.drawNeobrutalRect(bx + 470, by + 175, 330, 210, CyberTheme::cP2Pink, 4, 6);
-            gameRen.drawText(fontHud, "1V1 VERSUS", bx + 635, by + 205, CyberTheme::cBlack, true);
-            gameRen.drawText(fontSmall, "DUELO 60s", bx + 635, by + 255, CyberTheme::cBlack, true);
-            gameRen.drawText(fontSmall, "TOCA LA DERECHA", bx + 635, by + 315, CyberTheme::cBlack, true);
+                // Opción 2: MODO 1V1 VERSUS (60 SEGUNDOS)
+                gameRen.drawNeobrutalRect(bx + 470, by + 175, 330, 210, CyberTheme::cP2Pink, 4, 6);
+                gameRen.drawText(fontHud, "1V1 VERSUS", bx + 635, by + 205, CyberTheme::cBlack, true);
+                gameRen.drawText(fontSmall, "DUELO 60s", bx + 635, by + 255, CyberTheme::cBlack, true);
+                gameRen.drawText(fontSmall, "TOCA LA DERECHA", bx + 635, by + 315, CyberTheme::cBlack, true);
+            } else {
+                // Panel Único: Modo Solo Listo para Iniciar
+                gameRen.drawNeobrutalRect(bx + 140, by + 175, 580, 210, CyberTheme::cP1Cyan, 4, 6);
+                gameRen.drawText(fontHud, "MODO SOLO (1 JUGADOR)", kWidth / 2, by + 215, CyberTheme::cBlack, true);
+                gameRen.drawText(fontSmall, "DESLIZA EL DEDO O PALANCA PARA COMENZAR", kWidth / 2, by + 275, CyberTheme::cBlack, true);
+                gameRen.drawText(fontSmall, "3 VIDAS DE BLINDAJE", kWidth / 2, by + 325, CyberTheme::cBlack, true);
+            }
 
         } else if (state == GameState::PLAYING) {
             if (isVersus) {

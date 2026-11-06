@@ -8,14 +8,31 @@ TouchInput::TouchInput(int playerIndex, SDL_Color color)
 TouchInput::~TouchInput() {
     if (controller_) {
         setLED(0, 0, 0);
+        SDL_GameControllerClose(controller_);
+        controller_ = nullptr;
+    }
+    if (arcadeStick_) {
+        SDL_JoystickClose(arcadeStick_);
+        arcadeStick_ = nullptr;
     }
 }
 
 void TouchInput::setController(SDL_GameController* gc) {
+    if (controller_ && controller_ != gc) {
+        setLED(0, 0, 0);
+        SDL_GameControllerClose(controller_);
+    }
     controller_ = gc;
     if (controller_) {
         setLED(color_.r, color_.g, color_.b);
     }
+}
+
+void TouchInput::setArcadeStick(SDL_Joystick* joy) {
+    if (arcadeStick_ && arcadeStick_ != joy) {
+        SDL_JoystickClose(arcadeStick_);
+    }
+    arcadeStick_ = joy;
 }
 
 void TouchInput::triggerHaptic(float low, float high, Uint32 ms) {
@@ -104,6 +121,54 @@ void TouchInput::update(float dt, int screenW, int screenH) {
 #endif
     }
 
+    // 1.2 Soporte de Fight Stick / Palanca Arcade como katana
+    if (arcadeStick_) {
+        // Ejes X/Y del stick o Hat switch
+        Sint16 stickX = SDL_JoystickGetAxis(arcadeStick_, 0);
+        Sint16 stickY = SDL_JoystickGetAxis(arcadeStick_, 1);
+
+        float dirX = 0.0f;
+        float dirY = 0.0f;
+        if (std::abs(stickX) > 8000) dirX = stickX / 32767.0f;
+        if (std::abs(stickY) > 8000) dirY = stickY / 32767.0f;
+
+        // Comprobar D-pad si los ejes están en 0
+        if (std::abs(dirX) < 0.1f && std::abs(dirY) < 0.1f && SDL_JoystickNumHats(arcadeStick_) > 0) {
+            Uint8 hat = SDL_JoystickGetHat(arcadeStick_, 0);
+            if (hat & SDL_HAT_LEFT) dirX = -1.0f;
+            if (hat & SDL_HAT_RIGHT) dirX = 1.0f;
+            if (hat & SDL_HAT_UP) dirY = -1.0f;
+            if (hat & SDL_HAT_DOWN) dirY = 1.0f;
+        }
+
+        bool isStickMoved = (std::abs(dirX) > 0.2f || std::abs(dirY) > 0.2f);
+        bool btnSlash = false;
+        int nBtns = SDL_JoystickNumButtons(arcadeStick_);
+        for (int b = 0; b < nBtns && b < 8; ++b) {
+            if (SDL_JoystickGetButton(arcadeStick_, b)) {
+                btnSlash = true;
+                break;
+            }
+        }
+
+        if (isStickMoved || btnSlash) {
+            float moveSpeed = 1600.0f; // Velocidad de corte rápido
+            arcadeCursorX_ = std::clamp(arcadeCursorX_ + dirX * moveSpeed * dt, 40.0f, static_cast<float>(screenW - 40));
+            arcadeCursorY_ = std::clamp(arcadeCursorY_ + dirY * moveSpeed * dt, 40.0f, static_cast<float>(screenH - 40));
+
+            currentX_ = arcadeCursorX_;
+            currentY_ = arcadeCursorY_;
+            fingerDown_ = true;
+
+            touchHistory_.push_back({currentX_, currentY_, 0.0f});
+            trailPoints_.push_back({currentX_, currentY_, 1.0f, 18.0f});
+        } else {
+            if (fingerDown_ && !controller_) {
+                fingerDown_ = false;
+            }
+        }
+    }
+
     // 2. Procesar puntos táctiles para construir segmentos de espada válidos
     // Aumentar el tiempo en la historia
     for (auto& p : touchHistory_) {
@@ -142,3 +207,4 @@ void TouchInput::update(float dt, int screenW, int screenH) {
                        [](const SlashTrailPoint& tp) { return tp.life <= 0.0f; }),
         trailPoints_.end());
 }
+
