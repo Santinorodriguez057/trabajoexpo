@@ -17,7 +17,10 @@ bool InputManager::init() {
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE, "1");
 
     openAssignedController();
-    calibrate();
+    // No auto-calibramos en init con cualquier inclinación aleatoria.
+    // Usamos el centro absoluto de gravedad terrestre (~180°) hasta que el usuario calibre frente a la pantalla.
+    calibratedRoll_ = 3.14159265f;
+    isCalibratedUser_ = false;
     return true;
 }
 
@@ -150,13 +153,16 @@ void InputManager::calibrate() {
 
         if (calibrationStable_) {
             calibratedRoll_ = std::atan2(sumZ, sumX);
-        } else if (!state_.calibrated) {
+            isCalibratedUser_ = true;
+        } else if (!isCalibratedUser_) {
             calibratedRoll_ = (valid > 0) ? std::atan2(sumZ, sumX) : kFixedCenterAngle;
+            isCalibratedUser_ = true;
         }
     } else {
         calibratedRoll_ = kFixedCenterAngle;
         calibrationStable_ = true;
         calibrationStabilityPct_ = 100.0f;
+        isCalibratedUser_ = true;
     }
 
     currentRoll_ = 0.0f;

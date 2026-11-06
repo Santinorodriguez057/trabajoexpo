@@ -50,6 +50,7 @@ public:
 
     const InputState& getState() const { return state_; }
     bool hasController() const { return controller_ != nullptr; }
+    bool isCalibrated() const { return isCalibratedUser_; }
     bool hasGyro() const { return hasGyro_; }
     int getPlayerIndex() const { return playerIndex_; }
     bool hasArcadeShifter() const { return arcadeStick_ != nullptr; }
@@ -82,8 +83,9 @@ private:
 
     // Orientación física del volante (inclinación lateral / roll)
     float currentRoll_ = 0.0f;   // radianes
-    float calibratedRoll_ = 0.0f;
+    float calibratedRoll_ = 3.14159265f; // Referencia física fija de fábrica (horizontal perfecta hacia arriba)
     float targetSteering_ = 0.0f;
+    bool isCalibratedUser_ = false;
     bool calibrationStable_ = true;
     float calibrationStabilityPct_ = 100.0f;
 

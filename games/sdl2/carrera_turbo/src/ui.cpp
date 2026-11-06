@@ -156,8 +156,8 @@ void UserInterface::renderCalibration(const InputState& input, int playerNum, bo
     // Telemetría de ángulo y estado
     char angBuf[64];
     bool isCentered = std::abs(input.physicalAngleDeg) < 3.5f;
-    SDL_Color angCol = isCentered ? SDL_Color{34, 197, 94, 255} : SDL_Color{250, 204, 21, 255};
-    std::snprintf(angBuf, sizeof(angBuf), "%s (ÁNGULO: %+.1f°)", isCentered ? "CENTRO ALINEADO" : "CORRIGE AL CENTRO", input.physicalAngleDeg);
+    SDL_Color angCol = isCentered ? SDL_Color{34, 197, 94, 255} : (std::abs(input.physicalAngleDeg) < 12.0f ? SDL_Color{250, 204, 21, 255} : SDL_Color{239, 68, 68, 255});
+    std::snprintf(angBuf, sizeof(angBuf), "%s (ÁNGULO: %+.1f°)", isCentered ? "¡PERFECTO! CENTRADO" : (input.physicalAngleDeg < 0.0f ? "GIRA A LA DERECHA ->" : "<- GIRA A LA IZQUIERDA"), input.physicalAngleDeg);
     renderer_.drawText(fontSmall_, angBuf, wheelCenterX, boxY + boxH - (isSplit ? 22 : 30), angCol, true);
 
     // Barra de Progreso de Calibración
