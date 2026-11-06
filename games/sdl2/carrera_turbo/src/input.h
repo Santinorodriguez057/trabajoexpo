@@ -26,7 +26,7 @@ struct InputState {
 };
 
 struct DrivingConfig {
-    float steeringSensitivity = 1.0f;
+    float steeringSensitivity = 0.85f;
     float deadzone = 0.03f;      // Zona muerta en radianes
     float steeringSmoothing = 0.45f;
     bool rumbleEnabled = true;
