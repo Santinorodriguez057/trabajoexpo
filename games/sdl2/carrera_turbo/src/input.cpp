@@ -111,19 +111,18 @@ void InputManager::closeController() {
 }
 
 void InputManager::calibrate() {
-    // Valores fijos pre-calibrados del volante físico (Medio: Accel X = -9.67, Accel Z = 1.39)
-    // atan2(1.390683, -9.670010) = 2.999f rad (171.8°)
+    // Valores fijos de respaldo si no hay sensor disponible
     const float kFixedCenterAngle = 2.999f;
 
     if (controller_ && hasAccel_) {
-        // CALIBRACIÓN PROMEDIADA: se toman ~25 lecturas durante ~0.25s y se promedia el
-        // vector de gravedad. Si el mando se movió durante la toma (mucha dispersión),
-        // se conserva el centro anterior para no dejar el volante torcido.
-        const int kSamples = 25;
+        // Muestreo de alta precisión: 40 muestras durante ~0.35s midiendo el vector de gravedad
+        // Se calcula la dispersión para asegurar que el jugador mantuvo el volante firme y quieto en el centro
+        const int kSamples = 40;
         float sumX = 0.0f, sumZ = 0.0f;
         float firstAng = 0.0f;
-        float minAng = 0.0f, maxAng = 0.0f; // Desvío relativo a la primera lectura (seguro ante el salto ±π)
+        float minAng = 0.0f, maxAng = 0.0f;
         int valid = 0;
+
         for (int i = 0; i < kSamples; ++i) {
             SDL_PumpEvents();
             SDL_GameControllerUpdate();
@@ -140,24 +139,36 @@ void InputManager::calibrate() {
                 maxAng = std::max(maxAng, d);
                 ++valid;
             }
-            SDL_Delay(10);
+            SDL_Delay(8);
         }
-        bool stable = valid >= kSamples / 2 && (maxAng - minAng) < 0.12f; // < ~7° de dispersión
-        if (stable) {
+
+        float spread = maxAng - minAng; // en radianes
+        // Máxima dispersión aceptable: ~0.085 rad (~4.8 grados). Si se movió menos, calibración perfecta.
+        calibrationStable_ = (valid >= kSamples / 2) && (spread < 0.085f);
+        float stability = std::clamp(1.0f - (spread / 0.12f), 0.0f, 1.0f);
+        calibrationStabilityPct_ = stability * 100.0f;
+
+        if (calibrationStable_) {
             calibratedRoll_ = std::atan2(sumZ, sumX);
         } else if (!state_.calibrated) {
             calibratedRoll_ = (valid > 0) ? std::atan2(sumZ, sumX) : kFixedCenterAngle;
         }
-        // Si no fue estable y ya había calibración previa, se mantiene calibratedRoll_ anterior
     } else {
         calibratedRoll_ = kFixedCenterAngle;
+        calibrationStable_ = true;
+        calibrationStabilityPct_ = 100.0f;
     }
-    currentRoll_ = 0.0f; // El ángulo filtrado es relativo al centro
+
+    currentRoll_ = 0.0f;
     pedalHoldTimer_ = 0.0f;
     targetSteering_ = 0.0f;
     state_.steering = 0.0f;
+    state_.physicalAngleDeg = 0.0f;
     state_.calibrated = true;
-    setRumble(0.2f, 0.4f, 150);
+
+    // Confirmación háptica de calibración
+    setRumble(0.3f, 0.6f, 180);
+    setLED(34, 197, 94); // Luz verde esmeralda confirmando centro perfecto
 }
 
 float InputManager::applyDeadzone(float val, float dz) {

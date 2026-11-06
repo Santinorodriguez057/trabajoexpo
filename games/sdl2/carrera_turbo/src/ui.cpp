@@ -80,37 +80,37 @@ void UserInterface::renderDualShockDiagram(int cx, int cy, float tiltAngleDeg, b
     }
 }
 
-void UserInterface::renderCalibration(const InputState& input, int playerNum, bool isSplit) {
-    int modalW = isSplit ? 1040 : 1380;
-    int modalH = isSplit ? 480 : 760;
+void UserInterface::renderCalibration(const InputState& input, int playerNum, bool isSplit, float holdProgress, bool isHolding) {
+    int modalW = isSplit ? 1040 : 1420;
+    int modalH = isSplit ? 480 : 790;
     int modalX = 960 - modalW / 2;
     int modalY = isSplit ? (playerNum == 1 ? 30 : 560) : (540 - modalH / 2);
 
     renderer_.drawNeobrutalRect(modalX, modalY, modalW, modalH, {255, 255, 255, 255}, 5, 8);
 
     // Cabecera Neobrutalista
-    SDL_Color headerCol = (playerNum == 1) ? SDL_Color{56, 189, 248, 255} : SDL_Color{244, 63, 94, 255};
+    SDL_Color headerCol = isHolding ? SDL_Color{250, 204, 21, 255} : ((playerNum == 1) ? SDL_Color{56, 189, 248, 255} : SDL_Color{244, 63, 94, 255});
     renderer_.drawNeobrutalRect(modalX + 30, modalY - 24, modalW - 60, isSplit ? 54 : 75, headerCol, 4, 6);
-    std::string title = isSplit ? ("CALIBRACIÓN VOLANTE - JUGADOR " + std::to_string(playerNum)) : "CALIBRACIÓN Y CONTROL DEL MANDO DUALSHOCK";
+    std::string title = isHolding ? "CALIBRANDO CENTRO DEL VOLANTE... MANTENLO FIRME" : "CALIBRACIÓN INICIAL: SUJETA EL MANDO COMO UN VOLANTE";
     renderer_.drawText(isSplit ? fontHud_ : fontTitle_, title, 960, modalY - (isSplit ? 18 : 22), {18, 18, 18, 255}, true);
 
     // Instrucciones
     if (!isSplit) {
-        renderer_.drawText(fontHud_, "Mano Izquierda: Sujeta el mando | [L2] Acelerar • [L1] Frenar", 960, modalY + 75, {24, 24, 27, 255}, true);
-        renderer_.drawText(fontSmall_, "Gira el mando de lado a lado como un volante • Mano Derecha en palanca de cambios secuencial.", 960, modalY + 120, {75, 85, 99, 255}, true);
+        renderer_.drawText(fontHud_, "1. Coloca el mando derecho y centrado como si fuera un volante real.", 960, modalY + 70, {24, 24, 27, 255}, true);
+        renderer_.drawText(fontSmall_, "2. Manten presionado [X] o [ENTER] durante 1 segundo para capturar el centro exacto.", 960, modalY + 112, {75, 85, 99, 255}, true);
     }
 
     // Panel Doble Lado a Lado (Modelo de Mando 3D + Volante Virtual Interactivo)
-    int boxW = isSplit ? 480 : 580;
+    int boxW = isSplit ? 480 : 600;
     int boxH = isSplit ? 230 : 340;
-    int boxY = isSplit ? (modalY + 48) : (modalY + 160);
+    int boxY = isSplit ? (modalY + 48) : (modalY + 150);
 
     // 1. CUADRO IZQUIERDO: MODELO DUALSHOCK EXPLICATIVO
     int ctrlBoxX = 960 - boxW - (isSplit ? 15 : 25);
     renderer_.drawNeobrutalRect(ctrlBoxX, boxY, boxW, boxH, {245, 247, 250, 255}, 4, 6);
     // Título de sección
     renderer_.drawNeobrutalRect(ctrlBoxX + 20, boxY - 14, boxW - 40, 28, {56, 189, 248, 255}, 2, 0);
-    renderer_.drawText(fontSmall_, "MANDO: INCLINA DE LADO A LADO", ctrlBoxX + boxW / 2, boxY - 10, {18, 18, 18, 255}, true);
+    renderer_.drawText(fontSmall_, "POSTURA DEL VOLANTE (RECTO AL FRENTE)", ctrlBoxX + boxW / 2, boxY - 10, {18, 18, 18, 255}, true);
 
     // Diagrama animado de DualShock con inclinación en vivo
     int ctrlCenterX = ctrlBoxX + boxW / 2;
@@ -118,13 +118,13 @@ void UserInterface::renderCalibration(const InputState& input, int playerNum, bo
     renderDualShockDiagram(ctrlCenterX, ctrlCenterY, input.physicalAngleDeg, isSplit);
 
     // Leyenda inferior explicativa del movimiento lateral
-    renderer_.drawText(fontSmall_, "« INCLINAR IZQ.        •        INCLINAR DER. »", ctrlCenterX, boxY + boxH - (isSplit ? 22 : 30), {100, 116, 139, 255}, true);
+    renderer_.drawText(fontSmall_, "« GIRO IZQUIERDA        •        GIRO DERECHA »", ctrlCenterX, boxY + boxH - (isSplit ? 22 : 30), {100, 116, 139, 255}, true);
 
     // 2. CUADRO DERECHO: VOLANTE TELEMETRÍA EN VIVO
     int wheelBoxX = 960 + (isSplit ? 15 : 25);
     renderer_.drawNeobrutalRect(wheelBoxX, boxY, boxW, boxH, {30, 41, 59, 255}, 4, 6);
     renderer_.drawNeobrutalRect(wheelBoxX + 20, boxY - 14, boxW - 40, 28, {250, 204, 21, 255}, 2, 0);
-    renderer_.drawText(fontSmall_, "RESPUESTA VIRTUAL DEL VOLANTE", wheelBoxX + boxW / 2, boxY - 10, {18, 18, 18, 255}, true);
+    renderer_.drawText(fontSmall_, "NIVEL DE CENTRADO EN VIVO", wheelBoxX + boxW / 2, boxY - 10, {18, 18, 18, 255}, true);
 
     int wheelCenterX = wheelBoxX + boxW / 2;
     int pWheelRadius = isSplit ? 60 : 88;
@@ -153,17 +153,37 @@ void UserInterface::renderCalibration(const InputState& input, int playerNum, bo
     int tapeY = pWheelCenterY + static_cast<int>(std::sin(rad) * (pWheelRadius - 8));
     renderer_.drawNeobrutalCircle(tapeX, tapeY, isSplit ? 7 : 9, {250, 204, 21, 255}, 2, 0);
 
-    // Telemetría de ángulo
+    // Telemetría de ángulo y estado
     char angBuf[64];
-    std::snprintf(angBuf, sizeof(angBuf), "GIRO DETECTADO: %+.1f°", input.physicalAngleDeg);
-    renderer_.drawText(fontSmall_, angBuf, wheelCenterX, boxY + boxH - (isSplit ? 22 : 30), {250, 204, 21, 255}, true);
+    bool isCentered = std::abs(input.physicalAngleDeg) < 3.5f;
+    SDL_Color angCol = isCentered ? SDL_Color{34, 197, 94, 255} : SDL_Color{250, 204, 21, 255};
+    std::snprintf(angBuf, sizeof(angBuf), "%s (ÁNGULO: %+.1f°)", isCentered ? "CENTRO ALINEADO" : "CORRIGE AL CENTRO", input.physicalAngleDeg);
+    renderer_.drawText(fontSmall_, angBuf, wheelCenterX, boxY + boxH - (isSplit ? 22 : 30), angCol, true);
 
-    // Botón de confirmación
-    int btnW = isSplit ? 620 : 800;
-    int btnH = isSplit ? 46 : 56;
-    int btnY = isSplit ? (modalY + modalH - 52) : (modalY + modalH - 68);
-    renderer_.drawNeobrutalRect(960 - btnW / 2, btnY, btnW, btnH, {34, 197, 94, 255}, 4, 6);
-    renderer_.drawText(isSplit ? fontSmall_ : fontHud_, "SITUAR AL CENTRO Y PRESIONAR [X] O [ENTER]", 960, btnY + (isSplit ? 10 : 12), {18, 18, 18, 255}, true);
+    // Barra de Progreso de Calibración
+    int barW = isSplit ? 680 : 860;
+    int barH = isSplit ? 46 : 56;
+    int barY = isSplit ? (modalY + modalH - 52) : (modalY + modalH - 74);
+    int barX = 960 - barW / 2;
+
+    renderer_.drawNeobrutalRect(barX, barY, barW, barH, {241, 245, 249, 255}, 4, 6);
+
+    if (holdProgress > 0.0f) {
+        int fillW = static_cast<int>((barW - 8) * std::clamp(holdProgress, 0.0f, 1.0f));
+        SDL_Color fillCol = (holdProgress >= 1.0f) ? SDL_Color{34, 197, 94, 255} : SDL_Color{56, 189, 248, 255};
+        renderer_.drawNeobrutalRect(barX + 4, barY + 4, fillW, barH - 8, fillCol, 0, 0);
+    }
+
+    // Texto de acción dentro del botón/barra
+    if (holdProgress >= 1.0f) {
+        renderer_.drawText(isSplit ? fontSmall_ : fontHud_, "¡VOLANTE CALIBRADO CON ÉXITO!", 960, barY + (isSplit ? 10 : 12), {18, 18, 18, 255}, true);
+    } else if (isHolding) {
+        char holdBuf[64];
+        std::snprintf(holdBuf, sizeof(holdBuf), "MANTÉN FIRME... %d%%", static_cast<int>(holdProgress * 100.0f));
+        renderer_.drawText(isSplit ? fontSmall_ : fontHud_, holdBuf, 960, barY + (isSplit ? 10 : 12), {18, 18, 18, 255}, true);
+    } else {
+        renderer_.drawText(isSplit ? fontSmall_ : fontHud_, "MANTÉN PRESIONADO [X] O [ENTER] PARA CALIBRAR", 960, barY + (isSplit ? 10 : 12), {18, 18, 18, 255}, true);
+    }
 }
 
 void UserInterface::renderDifficultySelect(Difficulty selected) {

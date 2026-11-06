@@ -215,13 +215,42 @@ int main(int argc, char** argv) {
         const InputState& in1 = input1.getState();
 
         // Máquina de estados
+        static float calibHoldTimer = 0.0f;
+        static bool calibHolding = false;
+
         switch (state) {
             case GameState::CALIBRATION:
-                if (in1.confirm) {
-                    input1.calibrate();
-                    state = GameState::DIFFICULTY_SELECT;
-                } else if (in1.cancel) {
-                    running = false;
+                {
+                    // Para que no se descalibre rápido:
+                    // El jugador debe sostener el mando quieto en el centro manteniendo [X] o [ENTER] durante 0.85s
+                    bool pressingConfirm = in1.confirm;
+                    if (!pressingConfirm) {
+                        // También comprobar directamente el botón A del DualShock o teclado ENTER/ESPACIO
+                        if (SDL_GameControllerGetButton(SDL_GameControllerFromInstanceID(0), SDL_CONTROLLER_BUTTON_A) ||
+                            SDL_GameControllerGetButton(SDL_GameControllerFromInstanceID(1), SDL_CONTROLLER_BUTTON_A)) {
+                            pressingConfirm = true;
+                        }
+                    }
+
+                    if (pressingConfirm) {
+                        calibHolding = true;
+                        calibHoldTimer += dt;
+                        if (calibHoldTimer >= 0.85f) {
+                            // Toma la calibración precisa de gravedad cuando el volante ya está firme en el centro
+                            input1.calibrate();
+                            sound.playCheckpoint();
+                            state = GameState::DIFFICULTY_SELECT;
+                            calibHoldTimer = 0.0f;
+                            calibHolding = false;
+                        }
+                    } else {
+                        calibHolding = false;
+                        calibHoldTimer = std::max(0.0f, calibHoldTimer - dt * 2.0f);
+                    }
+
+                    if (in1.cancel) {
+                        running = false;
+                    }
                 }
                 break;
 
@@ -573,7 +602,8 @@ int main(int argc, char** argv) {
 
         // Renderizado de Interfaces (UI)
         if (state == GameState::CALIBRATION) {
-            ui.renderCalibration(in1, 1, false);
+            float holdProgress = calibHoldTimer / 0.85f;
+            ui.renderCalibration(in1, 1, false, holdProgress, calibHolding);
         } else if (state == GameState::DIFFICULTY_SELECT) {
             ui.renderDifficultySelect(difficulty);
         } else if (state == GameState::COUNTDOWN) {

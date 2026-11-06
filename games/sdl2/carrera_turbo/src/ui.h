@@ -29,7 +29,7 @@ public:
     UserInterface(Renderer& renderer, TTF_Font* fontTitle, TTF_Font* fontHud, TTF_Font* fontSmall, DrivingConfig& config);
     ~UserInterface();
 
-    void renderCalibration(const InputState& input, int playerNum = 1, bool isSplit = false);
+    void renderCalibration(const InputState& input, int playerNum = 1, bool isSplit = false, float holdProgress = 0.0f, bool isHolding = false);
     void renderDifficultySelect(Difficulty selected);
     void renderCountdown(float countdownTimer);
     void renderHud(const Car& car, float timeRemaining, int checkpointNum, float bonusBannerTimer, bool isSplit = false, int playerNum = 1, float rivalGap = 0.0f);

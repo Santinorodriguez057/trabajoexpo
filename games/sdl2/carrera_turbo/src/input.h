@@ -42,6 +42,8 @@ public:
     void handleEvent(const SDL_Event& ev);
 
     void calibrate();
+    bool isCalibrationStable() const { return calibrationStable_; }
+    float getCalibrationStabilityPct() const { return calibrationStabilityPct_; }
     void setRumble(float lowFreq, float highFreq, Uint32 durationMs, bool priority = false);
     bool isRumblePriorityActive() const;
     void setLED(Uint8 r, Uint8 g, Uint8 b);
@@ -82,6 +84,8 @@ private:
     float currentRoll_ = 0.0f;   // radianes
     float calibratedRoll_ = 0.0f;
     float targetSteering_ = 0.0f;
+    bool calibrationStable_ = true;
+    float calibrationStabilityPct_ = 100.0f;
 
     // Anti-latigazo de gatillos (L1 freno / L2 acelerador) y recalibración en carrera
     bool prevL1_ = false;
