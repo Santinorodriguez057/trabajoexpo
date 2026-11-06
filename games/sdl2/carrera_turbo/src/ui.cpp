@@ -81,29 +81,31 @@ void UserInterface::renderDualShockDiagram(int cx, int cy, float tiltAngleDeg, b
 }
 
 void UserInterface::renderCalibration(const InputState& input, int playerNum, bool isSplit, float holdProgress, bool isHolding) {
-    int modalW = isSplit ? 1040 : 1420;
-    int modalH = isSplit ? 480 : 790;
+    int modalW = isSplit ? 1040 : 1540;
+    int modalH = isSplit ? 480 : 810;
     int modalX = 960 - modalW / 2;
     int modalY = isSplit ? (playerNum == 1 ? 30 : 560) : (540 - modalH / 2);
 
     renderer_.drawNeobrutalRect(modalX, modalY, modalW, modalH, {255, 255, 255, 255}, 5, 8);
 
-    // Cabecera Neobrutalista
+    // Cabecera Neobrutalista - Ajustada a todo el ancho del modal para que ningún texto se desborde
     SDL_Color headerCol = isHolding ? SDL_Color{250, 204, 21, 255} : ((playerNum == 1) ? SDL_Color{56, 189, 248, 255} : SDL_Color{244, 63, 94, 255});
-    renderer_.drawNeobrutalRect(modalX + 30, modalY - 24, modalW - 60, isSplit ? 54 : 75, headerCol, 4, 6);
+    int headerW = modalW - 40;
+    int headerH = isSplit ? 54 : 72;
+    renderer_.drawNeobrutalRect(960 - headerW / 2, modalY - 26, headerW, headerH, headerCol, 4, 6);
     std::string title = isHolding ? "CALIBRANDO CENTRO DEL VOLANTE... MANTENLO FIRME" : "CALIBRACIÓN INICIAL: SUJETA EL MANDO COMO UN VOLANTE";
-    renderer_.drawText(isSplit ? fontHud_ : fontTitle_, title, 960, modalY - (isSplit ? 18 : 22), {18, 18, 18, 255}, true);
+    renderer_.drawText(isSplit ? fontSmall_ : fontHud_, title, 960, modalY - (isSplit ? 16 : 14), {18, 18, 18, 255}, true);
 
     // Instrucciones
     if (!isSplit) {
-        renderer_.drawText(fontHud_, "1. Coloca el mando derecho y centrado como si fuera un volante real.", 960, modalY + 70, {24, 24, 27, 255}, true);
-        renderer_.drawText(fontSmall_, "2. Manten presionado [X] o [ENTER] durante 1 segundo para capturar el centro exacto.", 960, modalY + 112, {75, 85, 99, 255}, true);
+        renderer_.drawText(fontHud_, "1. Coloca el mando derecho y centrado como si fuera un volante real.", 960, modalY + 62, {24, 24, 27, 255}, true);
+        renderer_.drawText(fontSmall_, "2. Manten presionado [X] o [ENTER] para guardar el centro. O presiona [TRIÁNGULO] para recalibrar.", 960, modalY + 102, {75, 85, 99, 255}, true);
     }
 
     // Panel Doble Lado a Lado (Modelo de Mando 3D + Volante Virtual Interactivo)
-    int boxW = isSplit ? 480 : 600;
+    int boxW = isSplit ? 480 : 640;
     int boxH = isSplit ? 230 : 340;
-    int boxY = isSplit ? (modalY + 48) : (modalY + 150);
+    int boxY = isSplit ? (modalY + 48) : (modalY + 142);
 
     // 1. CUADRO IZQUIERDO: MODELO DUALSHOCK EXPLICATIVO
     int ctrlBoxX = 960 - boxW - (isSplit ? 15 : 25);
@@ -160,10 +162,17 @@ void UserInterface::renderCalibration(const InputState& input, int playerNum, bo
     std::snprintf(angBuf, sizeof(angBuf), "%s (ÁNGULO: %+.1f°)", isCentered ? "¡PERFECTO! CENTRADO" : (input.physicalAngleDeg < 0.0f ? "GIRA A LA DERECHA ->" : "<- GIRA A LA IZQUIERDA"), input.physicalAngleDeg);
     renderer_.drawText(fontSmall_, angBuf, wheelCenterX, boxY + boxH - (isSplit ? 22 : 30), angCol, true);
 
-    // Barra de Progreso de Calibración
-    int barW = isSplit ? 680 : 860;
+    // 3. Botón de Recalibración Rápida con Triángulo [▲]
+    int recalBtnW = 620;
+    int recalBtnH = 46;
+    int recalBtnY = modalY + modalH - 146;
+    renderer_.drawNeobrutalRect(960 - recalBtnW / 2, recalBtnY, recalBtnW, recalBtnH, {250, 204, 21, 255}, 3, 4);
+    renderer_.drawText(fontSmall_, "Presiona [▲ / TRIÁNGULO] para Recalibrar Centro", 960, recalBtnY + 12, {18, 18, 18, 255}, true);
+
+    // 4. Barra de Progreso y Confirmación de Calibración
+    int barW = isSplit ? 680 : 920;
     int barH = isSplit ? 46 : 56;
-    int barY = isSplit ? (modalY + modalH - 52) : (modalY + modalH - 74);
+    int barY = isSplit ? (modalY + modalH - 52) : (modalY + modalH - 80);
     int barX = 960 - barW / 2;
 
     renderer_.drawNeobrutalRect(barX, barY, barW, barH, {241, 245, 249, 255}, 4, 6);
@@ -182,7 +191,7 @@ void UserInterface::renderCalibration(const InputState& input, int playerNum, bo
         std::snprintf(holdBuf, sizeof(holdBuf), "MANTÉN FIRME... %d%%", static_cast<int>(holdProgress * 100.0f));
         renderer_.drawText(isSplit ? fontSmall_ : fontHud_, holdBuf, 960, barY + (isSplit ? 10 : 12), {18, 18, 18, 255}, true);
     } else {
-        renderer_.drawText(isSplit ? fontSmall_ : fontHud_, "MANTÉN PRESIONADO [X] O [ENTER] PARA CALIBRAR", 960, barY + (isSplit ? 10 : 12), {18, 18, 18, 255}, true);
+        renderer_.drawText(isSplit ? fontSmall_ : fontHud_, "MANTÉN PRESIONADO [X] O [ENTER] PARA COMENZAR", 960, barY + (isSplit ? 10 : 12), {18, 18, 18, 255}, true);
     }
 }
 

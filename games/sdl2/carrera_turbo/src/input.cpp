@@ -289,12 +289,15 @@ void InputManager::update(float dt) {
 
     // 1. Control con Mando DualShock / Arcade
     if (controller_) {
-        // RECALIBRACIÓN EN CARRERA: R3 (click del stick derecho) o touchpad centran el volante
-        bool recalBtn = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_RIGHTSTICK) != 0;
+        // RECALIBRACIÓN EN CARRERA O EN MENÚ: Botón TRIÁNGULO (Button Y), R3 o Touchpad
+        bool recalBtn = (SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_Y) != 0) ||
+                        (SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_RIGHTSTICK) != 0);
 #if SDL_VERSION_ATLEAST(2, 0, 14)
-        recalBtn = recalBtn || SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_TOUCHPAD) != 0;
+        recalBtn = recalBtn || (SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_TOUCHPAD) != 0);
 #endif
-        if (recalBtn && !prevRecalBtn_ && hasAccel_) calibrate();
+        if (recalBtn && !prevRecalBtn_ && hasAccel_) {
+            calibrate();
+        }
         prevRecalBtn_ = recalBtn;
         if (hasGyro_ && hasAccel_) {
             float gyro[3] = {0, 0, 0};

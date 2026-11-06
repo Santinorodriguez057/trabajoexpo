@@ -57,7 +57,7 @@ void Car::tapCoolEngine() {
             engineOverheat_ = 0.0f; // Motor completamente enfriado y recuperado
             wrongShiftAlarmTimer_ = 0.0f;
         } else {
-            engineOverheat_ = std::max(0.0f, engineOverheat_ - 0.20f);
+            engineOverheat_ = std::max(0.0f, engineOverheat_ - 0.14f);
         }
     }
 }
@@ -140,12 +140,16 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
             else if (gear_ == 4) newGearMax = 205.0f;
             else if (gear_ == 5) newGearMax = 245.0f;
 
-            // Detección más sensible de mal cambio: si baja cuando ya va por encima de la velocidad tope de esa marcha
-            if (speed_ > newGearMax * 1.02f) {
+            // Detección estricta y castigadora de sobrerrégimen por mal cambio:
+            // Si el jugador baja a una marcha cuando va a más velocidad de la que soporta esa marcha,
+            // el motor se revienta (sobrecalentamiento instantáneo al 100%), pierde el 85% de fuerza,
+            // la caja se clava y exige 7 pulsaciones de enfriamiento/purga para poder volver a acelerar.
+            if (speed_ > newGearMax * 1.01f) {
                 engineOverheat_ = 1.0f;
-                coolTapsRemaining_ = 5; // Requiere 5 toques al botón X6
-                wrongShiftAlarmTimer_ = 5.0f;
-                pitch_ -= 14.0f; // Bloqueo violento de caja
+                coolTapsRemaining_ = 7; // Más castigador: requiere 7 toques al botón X6
+                wrongShiftAlarmTimer_ = 6.0f;
+                pitch_ -= 16.0f; // Bloqueo violento de caja
+                speed_ = std::max(20.0f, speed_ * 0.70f); // Frenada brusca por detonación mecánica
             }
         }
 
@@ -285,9 +289,9 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
 
         driveForce = (engineTorque * input.throttle) * (totalRatio * baseMultiplier);
 
-        // Si el motor está roto/sobrecalentado, la potencia cae un 75%
+        // Si el motor está roto/sobrecalentado, la potencia cae un 88% y la velocidad máxima se ahoga
         if (engineOverheat_ > 0.0f) {
-            driveForce *= (1.0f - engineOverheat_ * 0.75f);
+            driveForce *= (1.0f - engineOverheat_ * 0.88f);
         }
 
         // Impulso adicional de NITRO
