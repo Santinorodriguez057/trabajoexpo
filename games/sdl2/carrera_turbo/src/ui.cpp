@@ -544,7 +544,7 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
 
     // Si el auto va más rápido de lo seguro para la curva que se avecina, activar cartel HUD deportivo
     if (car.getSpeed() > safeSpeed + 12.0f && maxAheadCurve >= 4.0f) {
-        int warnW = 560;
+        int warnW = 460;
         int warnH = 68;
         int warnX = 960 - warnW / 2;
         // Ubicación estratégica debajo del retrovisor y banner de sector, 100% visible sin tapar la pista
@@ -552,11 +552,7 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
 
         // Pulso animado de advertencia neobrutalista
         renderer_.drawNeobrutalRect(warnX, warnY, warnW, warnH, {239, 68, 68, 255}, 4, 6);
-        // Franja lateral con icono de dirección de giro
-        const char* arrowSymbol = (curveDirection > 0.0f) ? ">>>" : "<<<";
-        char warnBuf[64];
-        std::snprintf(warnBuf, sizeof(warnBuf), "%s BAJA LA VELOCIDAD %s", arrowSymbol, arrowSymbol);
-        renderer_.drawText(fontTitle_, warnBuf, 960, warnY + 11, {255, 255, 255, 255}, true);
+        renderer_.drawText(fontTitle_, "BAJA LA VELOCIDAD", 960, warnY + 11, {255, 255, 255, 255}, true);
     }
 
     // 5. Mini Mapa del Circuito Técnico (Esquina Derecha de la Pantalla)
