@@ -45,9 +45,13 @@ int main(int argc, char** argv) {
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE, "1");
 
+    // Inicialización segura de SDL (reintenta sin AUDIO si el host no tiene servidor de sonido activo)
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_SENSOR | SDL_INIT_AUDIO) < 0) {
-        std::fprintf(stderr, "Error SDL_Init: %s\n", SDL_GetError());
-        return 1;
+        std::fprintf(stderr, "Aviso SDL_Init con AUDIO: %s, reintentando sin audio...\n", SDL_GetError());
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_SENSOR) < 0) {
+            std::fprintf(stderr, "Error SDL_Init: %s\n", SDL_GetError());
+            return 1;
+        }
     }
 
     if (TTF_Init() < 0) {
