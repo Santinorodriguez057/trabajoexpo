@@ -118,46 +118,25 @@ void InputManager::calibrate() {
     const float kFixedCenterAngle = 2.999f;
 
     if (controller_ && hasAccel_) {
-        // Muestreo de alta precisión: 40 muestras durante ~0.35s midiendo el vector de gravedad
-        // Se calcula la dispersión para asegurar que el jugador mantuvo el volante firme y quieto en el centro
-        const int kSamples = 40;
+        // Muestreo instantáneo NO BLOQUEANTE (sin SDL_Delay) para jamás congelar los fotogramas en carrera
+        const int kSamples = 8;
         float sumX = 0.0f, sumZ = 0.0f;
-        float firstAng = 0.0f;
-        float minAng = 0.0f, maxAng = 0.0f;
         int valid = 0;
 
         for (int i = 0; i < kSamples; ++i) {
-            SDL_PumpEvents();
             SDL_GameControllerUpdate();
             float accel[3] = {0, 0, -9.8f};
             if (SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_ACCEL, accel, 3) == 0) {
                 sumX += accel[0];
                 sumZ += accel[2];
-                float a = std::atan2(accel[2], accel[0]);
-                if (valid == 0) firstAng = a;
-                float d = a - firstAng;
-                while (d > 3.14159265f) d -= 6.2831853f;
-                while (d < -3.14159265f) d += 6.2831853f;
-                minAng = std::min(minAng, d);
-                maxAng = std::max(maxAng, d);
                 ++valid;
             }
-            SDL_Delay(8);
         }
 
-        float spread = maxAng - minAng; // en radianes
-        // Máxima dispersión aceptable: ~0.085 rad (~4.8 grados). Si se movió menos, calibración perfecta.
-        calibrationStable_ = (valid >= kSamples / 2) && (spread < 0.085f);
-        float stability = std::clamp(1.0f - (spread / 0.12f), 0.0f, 1.0f);
-        calibrationStabilityPct_ = stability * 100.0f;
-
-        if (calibrationStable_) {
-            calibratedRoll_ = std::atan2(sumZ, sumX);
-            isCalibratedUser_ = true;
-        } else if (!isCalibratedUser_) {
-            calibratedRoll_ = (valid > 0) ? std::atan2(sumZ, sumX) : kFixedCenterAngle;
-            isCalibratedUser_ = true;
-        }
+        calibrationStable_ = (valid > 0);
+        calibrationStabilityPct_ = 100.0f;
+        calibratedRoll_ = (valid > 0) ? std::atan2(sumZ, sumX) : kFixedCenterAngle;
+        isCalibratedUser_ = true;
     } else {
         calibratedRoll_ = kFixedCenterAngle;
         calibrationStable_ = true;

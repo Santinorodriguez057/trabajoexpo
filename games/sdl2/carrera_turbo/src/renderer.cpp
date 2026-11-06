@@ -38,6 +38,11 @@ Renderer::Renderer(SDL_Renderer* ren, TTF_Font* fontTitle, TTF_Font* fontHud, TT
 }
 
 Renderer::~Renderer() {
+    for (auto& kv : textCache_) {
+        if (kv.second.texFg) SDL_DestroyTexture(kv.second.texFg);
+        if (kv.second.texShadow) SDL_DestroyTexture(kv.second.texShadow);
+    }
+    textCache_.clear();
     if (whiteTex_) SDL_DestroyTexture(whiteTex_);
 }
 
@@ -106,35 +111,61 @@ void Renderer::drawNeobrutalCircle(int cx, int cy, int radius, SDL_Color fill, i
 void Renderer::drawText(TTF_Font* font, const std::string& text, int x, int y, SDL_Color color, bool center) {
     if (!font || text.empty()) return;
 
-    // Contorno nítido de alto contraste de 1px en 4 direcciones (sin sombras borrosas desplazadas)
-    SDL_Surface* surfShadow = TTF_RenderUTF8_Blended(font, text.c_str(), {18, 18, 18, 255});
-    if (surfShadow) {
-        SDL_Texture* texS = SDL_CreateTextureFromSurface(ren_, surfShadow);
-        SDL_FreeSurface(surfShadow);
-        if (texS) {
-            int w, h;
-            SDL_QueryTexture(texS, nullptr, nullptr, &w, &h);
-            int baseX = center ? x - w / 2 : x;
-            const int offsets[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
-            for (const auto& off : offsets) {
-                SDL_Rect dstS = {baseX + off[0], y + off[1], w, h};
-                SDL_RenderCopy(ren_, texS, nullptr, &dstS);
+    // Clave única en caché combinando puntero de fuente, color RGB y contenido de texto
+    char keyPrefix[64];
+    std::snprintf(keyPrefix, sizeof(keyPrefix), "%p_%02X%02X%02X%02X_",
+                  static_cast<const void*>(font), color.r, color.g, color.b, color.a);
+    std::string cacheKey = std::string(keyPrefix) + text;
+
+    auto it = textCache_.find(cacheKey);
+    if (it == textCache_.end()) {
+        // Limitar tamaño máximo del caché por seguridad en sesiones largas de carrera
+        if (textCache_.size() > 512) {
+            for (auto& kv : textCache_) {
+                if (kv.second.texFg) SDL_DestroyTexture(kv.second.texFg);
+                if (kv.second.texShadow) SDL_DestroyTexture(kv.second.texShadow);
             }
-            SDL_DestroyTexture(texS);
+            textCache_.clear();
+        }
+
+        CachedTextEntry entry;
+        SDL_Surface* surfShadow = TTF_RenderUTF8_Blended(font, text.c_str(), {18, 18, 18, 255});
+        if (surfShadow) {
+            entry.texShadow = SDL_CreateTextureFromSurface(ren_, surfShadow);
+            entry.w = surfShadow->w;
+            entry.h = surfShadow->h;
+            SDL_FreeSurface(surfShadow);
+        }
+
+        SDL_Surface* surfFg = TTF_RenderUTF8_Blended(font, text.c_str(), color);
+        if (surfFg) {
+            entry.texFg = SDL_CreateTextureFromSurface(ren_, surfFg);
+            entry.w = surfFg->w;
+            entry.h = surfFg->h;
+            SDL_FreeSurface(surfFg);
+        }
+
+        it = textCache_.emplace( std::move(cacheKey), entry ).first;
+    }
+
+    const CachedTextEntry& entry = it->second;
+    if (entry.w <= 0 || entry.h <= 0) return;
+
+    int baseX = center ? x - entry.w / 2 : x;
+
+    // Contorno nítido de alto contraste de 1px en 4 direcciones
+    if (entry.texShadow) {
+        const int offsets[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+        for (const auto& off : offsets) {
+            SDL_Rect dstS = {baseX + off[0], y + off[1], entry.w, entry.h};
+            SDL_RenderCopy(ren_, entry.texShadow, nullptr, &dstS);
         }
     }
 
-    SDL_Surface* surf = TTF_RenderUTF8_Blended(font, text.c_str(), color);
-    if (!surf) return;
-    SDL_Texture* tex = SDL_CreateTextureFromSurface(ren_, surf);
-    SDL_FreeSurface(surf);
-    if (!tex) return;
-
-    int w, h;
-    SDL_QueryTexture(tex, nullptr, nullptr, &w, &h);
-    SDL_Rect dst = {center ? x - w / 2 : x, y, w, h};
-    SDL_RenderCopy(ren_, tex, nullptr, &dst);
-    SDL_DestroyTexture(tex);
+    if (entry.texFg) {
+        SDL_Rect dst = {baseX, y, entry.w, entry.h};
+        SDL_RenderCopy(ren_, entry.texFg, nullptr, &dst);
+    }
 }
 
 void Renderer::renderPolygon(int x1, int y1, int x2, int y2, int x3, int y3, int x4, int y4, SDL_Color color) {
@@ -370,45 +401,72 @@ void Renderer::renderRoad(const Road& road, const Car& car, float horizonY, floa
     // La cámara está montada dentro del auto y debe reflejar la posición exacta del piloto (playerX)
     float playerCamX = playerX;
 
-    // PROYECCIÓN CONTINUA DE CURVATURA ESTILO RETRO-ARCADE CLÁSICO (Test Drive II / OutRun):
-    // La curvatura se acumula suavemente y se atenúa de forma cuadrática y continua hacia el horizonte,
-    // eliminando por completo cualquier umbral brusco (kCurveLookahead fijo) que cause congelamiento o popping.
+    // INTEGRACIÓN DE CURVATURA SUB-SEGMENTO 100% CONTINUA (C1 SMOOTHNESS):
+    // Elimina por completo el efecto de "escalón" o sensación de que la curva "va cargando sobre la trazada"
+    // cada 12 metros cuando basePercent pasa de 0.99 a 0.00.
+    // - n = 0 está anclado exactamente en el plano cercano del auto (dt0 = 1.0 - basePercent hasta el borde de seg1).
+    // - La integración trapezoidal fraccional acumula curRelX y ddx sin saltos discretos entre segmentos.
     const float kCurveRender = 55.0f;
-    const float kLookaheadMax = 120.0f;
+    const float kLookaheadMax = 135.0f;
     float curRelX = 0.0f;
-    // dx inicial continuo considerando la fracción exacta dentro del segmento
+    float ddx = 0.0f;
+
     float curveAtCar = seg0.curve * (1.0f - basePercent) + seg1.curve * basePercent;
-    float ddx = -curveAtCar * basePercent * kCurveRender;
+    float dt0 = 1.0f - basePercent; // Fracción restante del segmento actual bajo el auto
 
     for (int n = 0; n < kDrawDistance; ++n) {
         const RoadSegment& seg = road.getSegment(baseIdx + n);
-        float relZ = (static_cast<float>(n) - basePercent) * Road::kSegmentLength;
-        if (relZ < 3.2f) relZ = 3.2f;
+
+        float relZ;
+        float segWorldY;
+        float segCurve;
+        float distSegs;
+
+        if (n == 0) {
+            // Plano cercano anclado suavemente frente al parabrisas del vehículo
+            relZ = 3.2f;
+            segWorldY = playerWorldY;
+            segCurve = curveAtCar;
+            distSegs = 0.0f;
+        } else {
+            distSegs = static_cast<float>(n) - basePercent;
+            relZ = std::max(3.2f, distSegs * Road::kSegmentLength);
+            segWorldY = seg.worldY;
+            segCurve = seg.curve;
+        }
 
         float scale = kCameraDepth / relZ;
 
-        // Acumulación suave de curvatura relativa desde el auto hacia adelante
-        float worldX = curRelX - (playerX * roadW);
-        float worldY = seg.worldY - cameraH;
+        // Desplazamiento transversal continuo desde la posición exacta del piloto
+        float worldX = curRelX - (playerCamX * roadW);
+        float worldY = segWorldY - cameraH;
 
-        // Proyección en perspectiva pura: sin deformación angular artificial en rectas
-        float sx = (viewW * 0.5f) + (scale * worldX);
+        // Proyección en perspectiva pura con ligero peralte visual dinámico en cámara
+        float sx = (viewW * 0.5f) + (scale * worldX) - (camTilt * distSegs * 8.0f);
         float sy = horizonY - (scale * worldY);
         float sw = scale * roadW;
 
-        float distRatio = static_cast<float>(n) / static_cast<float>(kDrawDistance);
+        float distRatio = distSegs / static_cast<float>(kDrawDistance);
         float fog = std::clamp(std::pow(distRatio, 1.6f), 0.0f, 1.0f);
 
-        projected[n] = {sx, sy, sw, scale, static_cast<float>(viewH), fog, seg.curve};
+        projected[n] = {sx, sy, sw, scale, static_cast<float>(viewH), fog, segCurve};
 
-        curRelX += ddx;
-        // Atenuación suave continua usando la distancia continua real (n - basePercent)
-        // para que al cruzar un límite de segmento no exista ningún salto discreto
-        float distSegs = std::max(0.0f, static_cast<float>(n) - basePercent);
-        if (distSegs < kLookaheadMax) {
+        // Integración trapezoidal continua hacia el siguiente punto (n -> n + 1)
+        if (n == 0) {
+            // Primer tramo fraccional desde el auto (basePercent) hasta el inicio de seg1 (1.0)
+            float c0 = 0.5f * (curveAtCar + seg1.curve) * kCurveRender;
+            curRelX += 0.5f * c0 * dt0 * dt0;
+            ddx += c0 * dt0;
+        } else if (distSegs < kLookaheadMax) {
+            const RoadSegment& nextSeg = road.getSegment(baseIdx + n + 1);
             float fade = 1.0f - (distSegs / kLookaheadMax);
-            float weight = fade * fade; // Suavizado C1 en el horizonte
-            ddx += seg.curve * kCurveRender * weight;
+            // Smoothstep C1 (3*f^2 - 2*f^3) para que la curvatura se funda suavemente en el horizonte
+            float weight = fade * fade * (3.0f - 2.0f * fade);
+            float c = 0.5f * (seg.curve + nextSeg.curve) * kCurveRender * weight;
+            curRelX += ddx + 0.5f * c;
+            ddx += c;
+        } else {
+            curRelX += ddx;
         }
     }
 

@@ -402,9 +402,9 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
     // Fuerza centrífuga calibrada: castiga intentar tomar curvas cerradas a más de 135 km/h
     float centrifugal = currentCurve * speedRatioNorm * speedRatioNorm * 2.55f;
 
-    // INERCIA LATERAL: la velocidad lateral se acerca gradualmente al objetivo (~0.2s)
+    // INERCIA LATERAL: respuesta directa y progresiva en curvas (~0.10s) para que la trazada se sienta 100% conectada al volante
     float targetLatVel = steerPush - centrifugal;
-    latVel_ += (targetLatVel - latVel_) * (1.0f - std::pow(0.0035f, dt));
+    latVel_ += (targetLatVel - latVel_) * (1.0f - std::pow(0.0002f, dt));
     x_ += latVel_ * dt;
     if (x_ > 2.2f || x_ < -2.2f) latVel_ = 0.0f;
     x_ = std::clamp(x_, -2.2f, 2.2f);

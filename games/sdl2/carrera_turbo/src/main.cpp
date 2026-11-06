@@ -149,13 +149,15 @@ int main(int argc, char** argv) {
     float sectorBannerTimer = 0.0f;
     float bestSectorTimes[3] = {99999.0f, 99999.0f, 99999.0f};
 
-    Uint32 lastTime = SDL_GetTicks();
+    Uint64 lastPerfCount = SDL_GetPerformanceCounter();
+    const double perfFreq = static_cast<double>(SDL_GetPerformanceFrequency());
 
     while (running) {
-        Uint32 currentTime = SDL_GetTicks();
-        float dt = (currentTime - lastTime) / 1000.0f;
+        Uint64 curPerfCount = SDL_GetPerformanceCounter();
+        float dt = static_cast<float>(static_cast<double>(curPerfCount - lastPerfCount) / perfFreq);
+        if (dt <= 0.0001f) dt = 0.0001f;
         if (dt > 0.05f) dt = 0.05f;
-        lastTime = currentTime;
+        lastPerfCount = curPerfCount;
 
         input1.clearMenuFlags();
 
@@ -620,7 +622,13 @@ int main(int argc, char** argv) {
         }
 
         SDL_RenderPresent(ren);
-        SDL_Delay(8);
+
+        // Si el monitor no aplica VSync por hardware, limitar suavemente a ~120 FPS sin causar hipo con VSync a 60Hz
+        Uint64 frameEndCount = SDL_GetPerformanceCounter();
+        double frameElapsedMs = (static_cast<double>(frameEndCount - curPerfCount) / perfFreq) * 1000.0;
+        if (frameElapsedMs < 4.0) {
+            SDL_Delay(1);
+        }
     }
 
     if (fontTitle) TTF_CloseFont(fontTitle);

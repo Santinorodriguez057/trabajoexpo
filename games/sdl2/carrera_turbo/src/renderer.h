@@ -3,6 +3,7 @@
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <string>
+#include <unordered_map>
 #include "road.h"
 #include "car.h"
 
@@ -41,6 +42,15 @@ private:
     TTF_Font* fontSmall_;
 
     SDL_Texture* whiteTex_ = nullptr; // Textura 1x1 para dibujo acelerado
+
+    // Caché en GPU de textos TTF para evitar crear/destruir superficies en cada fotograma
+    struct CachedTextEntry {
+        SDL_Texture* texFg = nullptr;
+        SDL_Texture* texShadow = nullptr;
+        int w = 0;
+        int h = 0;
+    };
+    std::unordered_map<std::string, CachedTextEntry> textCache_;
 
     // Variables de estado visual continuo para fluidez total
     float skyParallaxX_ = 0.0f;
