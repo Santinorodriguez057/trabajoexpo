@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Dual Show Arcade
+Comment=Lanzador de Dual Show con actualizacion automatica
+Exec=bash -c "cd '/home/santino/proyectos/trabajo expo' && ./JUGAR.sh"
+Path=/home/santino/proyectos/trabajo expo
+Terminal=true
+Categories=Game;
