@@ -57,8 +57,8 @@ int main(int argc, char** argv) {
         "Tiro al Blanco - Puesto de Feria",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        1280, 720,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
+        1920, 1080,
+        SDL_WINDOW_FULLSCREEN_DESKTOP
     );
 
     if (!window) {
