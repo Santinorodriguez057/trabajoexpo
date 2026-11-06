@@ -155,20 +155,17 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // Asignar a Jugador 1
-        if (!ds4Controllers.empty()) {
+        // Asignar mandos:
+        // El Modo de a 2 (Versus) REQUIERE obligatoriamente DOS DUALSHOCK con Touchpad.
+        if (ds4Controllers.size() >= 2) {
+            touchP1.setController(ds4Controllers[0]);
+            touchP2.setController(ds4Controllers[1]);
+        } else if (ds4Controllers.size() == 1) {
+            // Un solo DualShock: juega solo con Touchpad
             touchP1.setController(ds4Controllers[0]);
         } else if (!generalSticks.empty()) {
+            // Sin DualShock: fallback de 1 jugador con Fight Stick
             touchP1.setArcadeStick(generalSticks[0]);
-        }
-
-        // Asignar a Jugador 2
-        if (ds4Controllers.size() >= 2) {
-            touchP2.setController(ds4Controllers[1]);
-        } else if (ds4Controllers.size() == 1 && !generalSticks.empty()) {
-            touchP2.setArcadeStick(generalSticks[0]);
-        } else if (generalSticks.size() >= 2) {
-            touchP2.setArcadeStick(generalSticks[1]);
         }
     };
 
@@ -234,7 +231,7 @@ int main(int argc, char* argv[]) {
         }
 
         // --- ACTUALIZACIÓN SEGÚN ESTADO ---
-        int connectedPlayers = (touchP1.isConnected() ? 1 : 0) + (touchP2.isConnected() ? 1 : 0);
+        bool hasTwoDualshocks = (touchP1.getController() != nullptr && touchP2.getController() != nullptr);
 
         if (state == GameState::MODE_SELECT) {
             touchP1.update(dtReal, kWidth, kHeight);
@@ -244,8 +241,8 @@ int main(int argc, char* argv[]) {
             bool startSolo = false;
             bool start1v1  = false;
 
-            if (connectedPlayers >= 2) {
-                // Si hay 2 mandos conectados, puede elegir Solo o 1v1 tocando su mitad o con botón
+            if (hasTwoDualshocks) {
+                // Si hay 2 DUALSHOCK conectados, se habilita el modo 1v1
                 if (touchP1.isFingerDown() && !touchP2.isFingerDown()) {
                     if (touchP1.getFingerX() < kWidth * 0.5f) startSolo = true;
                     else start1v1 = true;
@@ -260,7 +257,7 @@ int main(int argc, char* argv[]) {
                     start1v1 = true;
                 }
             } else {
-                // Con 1 solo mando/stick conectado: arranca automáticamente en Modo Solo al tocar
+                // Modo Solo: con 1 DualShock o 1 Fight Stick
                 if (touchP1.isFingerDown()) {
                     startSolo = true;
                 }
@@ -279,7 +276,7 @@ int main(int argc, char* argv[]) {
             }
 
             if (startSolo || start1v1) {
-                isVersus = start1v1 && (connectedPlayers >= 2);
+                isVersus = start1v1 && hasTwoDualshocks;
                 state = GameState::PLAYING;
                 matchTimer = 60.0f;
                 scoreSys.reset();
@@ -423,10 +420,19 @@ int main(int argc, char* argv[]) {
             gameRen.drawNeobrutalRect(bx, by, boxW, boxH, CyberTheme::cWhite, 5, 8);
             gameRen.drawText(fontTitle, "NINJA SLASHER", kWidth / 2, by + 40, CyberTheme::cBlack, true);
             
-            std::string statusText = (connectedPlayers >= 2) ? "2 DISPOSITIVOS DETECTADOS - ELIGE MODO" : "1 DISPOSITIVO DETECTADO - MODO SOLO";
-            gameRen.drawText(fontSmall, statusText, kWidth / 2, by + 115, (connectedPlayers >= 2) ? CyberTheme::cGreen : CyberTheme::cBlack, true);
+            std::string statusText;
+            if (hasTwoDualshocks) {
+                statusText = "2 DUALSHOCK DETECTADOS - TOCA PARA ELEGIR MODO";
+            } else if (touchP1.getController()) {
+                statusText = "1 DUALSHOCK DETECTADO - MODO SOLO (CONECTA 2 DUALSHOCK PARA 1V1)";
+            } else if (touchP1.getArcadeStick()) {
+                statusText = "FIGHT STICK DETECTADO - MODO SOLO";
+            } else {
+                statusText = "CONECTA UN MANDO DUALSHOCK 4";
+            }
+            gameRen.drawText(fontSmall, statusText, kWidth / 2, by + 115, hasTwoDualshocks ? CyberTheme::cGreen : CyberTheme::cBlack, true);
 
-            if (connectedPlayers >= 2) {
+            if (hasTwoDualshocks) {
                 // Opción 1: MODO SOLO (3 VIDAS)
                 gameRen.drawNeobrutalRect(bx + 60, by + 175, 330, 210, CyberTheme::cP1Cyan, 4, 6);
                 gameRen.drawText(fontHud, "MODO SOLO", bx + 225, by + 205, CyberTheme::cBlack, true);
@@ -442,7 +448,7 @@ int main(int argc, char* argv[]) {
                 // Panel Único: Modo Solo Listo para Iniciar
                 gameRen.drawNeobrutalRect(bx + 140, by + 175, 580, 210, CyberTheme::cP1Cyan, 4, 6);
                 gameRen.drawText(fontHud, "MODO SOLO (1 JUGADOR)", kWidth / 2, by + 215, CyberTheme::cBlack, true);
-                gameRen.drawText(fontSmall, "DESLIZA EL DEDO O PALANCA PARA COMENZAR", kWidth / 2, by + 275, CyberTheme::cBlack, true);
+                gameRen.drawText(fontSmall, "DESLIZA POR EL TOUCHPAD O PALANCA PARA COMENZAR", kWidth / 2, by + 275, CyberTheme::cBlack, true);
                 gameRen.drawText(fontSmall, "3 VIDAS DE BLINDAJE", kWidth / 2, by + 325, CyberTheme::cBlack, true);
             }
 
