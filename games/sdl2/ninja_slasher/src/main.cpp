@@ -405,8 +405,19 @@ int main(int argc, char* argv[]) {
             scoreSys.update(dt);
 
         } else if (state == GameState::GAME_OVER) {
-            // Reiniciar con toque o botón
-            if (touchP1.isFingerDown() || (touchP1.getController() && SDL_GameControllerGetButton(touchP1.getController(), SDL_CONTROLLER_BUTTON_A))) {
+            // Reiniciar EXCLUSIVAMENTE con el botón [X] (Cruz / Button A) del mando o botón 0 del arcade stick
+            bool btnRestart = false;
+            if (touchP1.getController() && SDL_GameControllerGetButton(touchP1.getController(), SDL_CONTROLLER_BUTTON_A)) {
+                btnRestart = true;
+            }
+            if (isVersus && touchP2.getController() && SDL_GameControllerGetButton(touchP2.getController(), SDL_CONTROLLER_BUTTON_A)) {
+                btnRestart = true;
+            }
+            if (touchP1.getArcadeStick() && SDL_JoystickGetButton(touchP1.getArcadeStick(), 0)) {
+                btnRestart = true;
+            }
+
+            if (btnRestart) {
                 state = GameState::MODE_SELECT;
             }
         }
@@ -497,7 +508,7 @@ int main(int argc, char* argv[]) {
                 gameRen.drawText(fontHud, "PUNTAJE FINAL: " + std::to_string(scoreSys.getScore(0)), kWidth / 2, by + 160, CyberTheme::cBlack, true);
             }
 
-            gameRen.drawText(fontSmall, "TOCA EL TOUCHPAD PARA VOLVER A JUGAR", kWidth / 2, by + 310, CyberTheme::cBlack, true);
+            gameRen.drawText(fontSmall, "PRESIONA [X] PARA VOLVER A JUGAR", kWidth / 2, by + 310, CyberTheme::cBlack, true);
         }
 
         SDL_RenderPresent(renderer);
