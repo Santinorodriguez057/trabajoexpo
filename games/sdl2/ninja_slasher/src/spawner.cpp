@@ -72,3 +72,4 @@ void Spawner::spawnWave(std::vector<CyberEntity>& outEntities) {
         outEntities.emplace_back(type, spawnX, spawnY, vx, vy, idealAngle);
     }
 }
+

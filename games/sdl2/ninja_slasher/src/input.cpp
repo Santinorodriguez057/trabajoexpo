@@ -62,7 +62,7 @@ void TouchInput::handleEvent(const SDL_Event& ev, int screenW, int screenH) {
             prevY_ = currentY_;
             touchHistory_.clear();
             touchHistory_.push_back({currentX_, currentY_, 0.0f});
-            trailPoints_.push_back({currentX_, currentY_, 1.0f, 18.0f});
+            trailPoints_.push_back({currentX_, currentY_, 1.0f, 26.0f});
         }
     } else if (ev.type == SDL_CONTROLLERTOUCHPADMOTION) {
         if (ev.ctouchpad.which == myId && ev.ctouchpad.touchpad == 0 && ev.ctouchpad.finger == 0) {
@@ -74,7 +74,7 @@ void TouchInput::handleEvent(const SDL_Event& ev, int screenW, int screenH) {
             currentX_ = ev.ctouchpad.x * screenW;
             currentY_ = ev.ctouchpad.y * screenH;
             touchHistory_.push_back({currentX_, currentY_, 0.0f});
-            trailPoints_.push_back({currentX_, currentY_, 1.0f, 18.0f});
+            trailPoints_.push_back({currentX_, currentY_, 1.0f, 26.0f});
         }
     } else if (ev.type == SDL_CONTROLLERTOUCHPADUP) {
         if (ev.ctouchpad.which == myId && ev.ctouchpad.touchpad == 0 && ev.ctouchpad.finger == 0) {
@@ -104,14 +104,14 @@ void TouchInput::update(float dt, int screenW, int screenH) {
                     currentY_ = sy;
                     touchHistory_.clear();
                     touchHistory_.push_back({sx, sy, 0.0f});
-                    trailPoints_.push_back({sx, sy, 1.0f, 18.0f});
+                    trailPoints_.push_back({sx, sy, 1.0f, 26.0f});
                 } else {
                     float dist = std::hypot(sx - currentX_, sy - currentY_);
                     if (dist > 3.0f) {
                         currentX_ = sx;
                         currentY_ = sy;
                         touchHistory_.push_back({sx, sy, 0.0f});
-                        trailPoints_.push_back({sx, sy, 1.0f, 18.0f});
+                        trailPoints_.push_back({sx, sy, 1.0f, 26.0f});
                     }
                 }
             } else {
@@ -161,7 +161,7 @@ void TouchInput::update(float dt, int screenW, int screenH) {
             fingerDown_ = true;
 
             touchHistory_.push_back({currentX_, currentY_, 0.0f});
-            trailPoints_.push_back({currentX_, currentY_, 1.0f, 18.0f});
+            trailPoints_.push_back({currentX_, currentY_, 1.0f, 26.0f});
         } else {
             if (fingerDown_ && !controller_) {
                 fingerDown_ = false;

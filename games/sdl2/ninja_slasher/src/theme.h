@@ -23,3 +23,4 @@ namespace CyberTheme {
     inline const SDL_Color cSilver      = {203, 213, 225, 255};
     inline const SDL_Color cOrange      = {251, 146, 60, 255};
 }
+

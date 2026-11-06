@@ -22,3 +22,4 @@ private:
 
     void spawnWave(std::vector<CyberEntity>& outEntities);
 };
+

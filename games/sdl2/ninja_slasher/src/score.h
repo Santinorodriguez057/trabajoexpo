@@ -23,6 +23,11 @@ public:
 
     int getScore(int playerIndex) const { return (playerIndex == 0) ? p1Score_ : p2Score_; }
     int getCombo(int playerIndex) const { return (playerIndex == 0) ? p1Combo_ : p2Combo_; }
+    // Fracción restante (0..1) de la ventana para encadenar el combo actual
+    float getComboTimerFrac(int playerIndex) const {
+        float t = (playerIndex == 0) ? p1ComboTimer_ : p2ComboTimer_;
+        return (t > 0.0f) ? (t / 1.4f) : 0.0f;
+    }
     int getLives() const { return lives_; }
     bool isGameOver() const { return lives_ <= 0; }
     void loseLife() { if (lives_ > 0) --lives_; }
