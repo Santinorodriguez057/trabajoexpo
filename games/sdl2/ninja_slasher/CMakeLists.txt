@@ -1,0 +1,38 @@
+find_package(SDL2 REQUIRED)
+find_package(SDL2_ttf REQUIRED)
+find_package(SDL2_mixer REQUIRED)
+
+add_executable(ninja_slasher
+    src/main.cpp
+    src/input.cpp
+    src/entity.cpp
+    src/spawner.cpp
+    src/score.cpp
+    src/renderer.cpp
+)
+
+set(NINJA_LIBS)
+if(TARGET SDL2::SDL2main)
+    list(APPEND NINJA_LIBS SDL2::SDL2main)
+endif()
+list(APPEND NINJA_LIBS SDL2::SDL2)
+
+if(TARGET SDL2::SDL2_ttf)
+    list(APPEND NINJA_LIBS SDL2::SDL2_ttf)
+elseif(TARGET SDL2_ttf::SDL2_ttf)
+    list(APPEND NINJA_LIBS SDL2_ttf::SDL2_ttf)
+else()
+    list(APPEND NINJA_LIBS ${SDL2_TTF_LIBRARIES})
+    target_include_directories(ninja_slasher PRIVATE ${SDL2_TTF_INCLUDE_DIRS})
+endif()
+
+if(TARGET SDL2_mixer::SDL2_mixer)
+    list(APPEND NINJA_LIBS SDL2_mixer::SDL2_mixer)
+elseif(TARGET SDL2::SDL2_mixer)
+    list(APPEND NINJA_LIBS SDL2::SDL2_mixer)
+else()
+    list(APPEND NINJA_LIBS ${SDL2_MIXER_LIBRARIES})
+    target_include_directories(ninja_slasher PRIVATE ${SDL2_MIXER_INCLUDE_DIRS})
+endif()
+
+target_link_libraries(ninja_slasher PRIVATE ${NINJA_LIBS})
