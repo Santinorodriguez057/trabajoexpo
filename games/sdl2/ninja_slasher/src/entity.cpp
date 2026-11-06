@@ -41,8 +41,9 @@ void CyberEntity::update(float dt) {
     angle_ += rotSpeed_ * dt;
 
     // Si cae por debajo del borde de pantalla (con margen), muere
-    if (y_ > 1250.0f) {
+    if (y_ > 1150.0f && vy_ > 0.0f) {
         alive_ = false;
+        dropped_ = true;
     }
 }
 
@@ -81,3 +82,4 @@ void CyberEntity::spawnHalves(float cutAngle, std::vector<CutHalf>& outHalves) c
     outHalves.push_back(h1);
     outHalves.push_back(h2);
 }
+

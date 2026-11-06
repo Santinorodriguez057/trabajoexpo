@@ -18,6 +18,7 @@ public:
     void reset();
     void addCut(int playerIndex, int basePoints, bool isPerfect, float x, float y);
     void registerMineHit(int playerIndex, float x, float y);
+    void registerDropMiss(float x, float y);
     void update(float dt);
 
     int getScore(int playerIndex) const { return (playerIndex == 0) ? p1Score_ : p2Score_; }
@@ -40,3 +41,4 @@ private:
 
     std::vector<FloatingScore> floatingScores_;
 };
+

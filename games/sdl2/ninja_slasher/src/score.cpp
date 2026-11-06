@@ -62,6 +62,19 @@ void ScoreSystem::registerMineHit(int playerIndex, float x, float y) {
     floatingScores_.push_back(fs);
 }
 
+void ScoreSystem::registerDropMiss(float x, float y) {
+    p1Combo_ = 0;
+    loseLife();
+
+    FloatingScore fs;
+    fs.x = x;
+    fs.y = y;
+    fs.text = "¡FALLO! -1 VIDA";
+    fs.r = 239; fs.g = 68; fs.b = 68;
+    fs.life = 1.2f;
+    floatingScores_.push_back(fs);
+}
+
 void ScoreSystem::update(float dt) {
     if (p1ComboTimer_ > 0.0f) {
         p1ComboTimer_ -= dt;
@@ -82,3 +95,4 @@ void ScoreSystem::update(float dt) {
                        [](const FloatingScore& fs) { return fs.life <= 0.0f; }),
         floatingScores_.end());
 }
+

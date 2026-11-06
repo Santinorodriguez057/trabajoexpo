@@ -319,32 +319,26 @@ void GameRenderer::renderTrails(const std::vector<SlashTrailPoint>& trail, SDL_C
     }
 }
 
-void GameRenderer::renderHudSolo(int score, int combo, int lives, float timeLeft) {
+void GameRenderer::renderHudSolo(int score, int combo, int lives) {
     // 1. Caja de Puntaje (Superior Izquierda)
-    drawNeobrutalRect(40, 30, 280, 80, CyberTheme::cP1Cyan, 4, 6);
-    drawText(fontSmall_, "SCORE", 60, 40, CyberTheme::cBlack);
+    drawNeobrutalRect(40, 30, 300, 80, CyberTheme::cP1Cyan, 4, 6);
+    drawText(fontSmall_, "PUNTAJE", 60, 40, CyberTheme::cBlack);
     drawText(fontHud_, std::to_string(score), 60, 62, CyberTheme::cBlack);
 
     // 2. Vidas (Corazones / Bloques de Blindaje)
-    drawNeobrutalRect(350, 30, 220, 80, CyberTheme::cWhite, 4, 6);
-    drawText(fontSmall_, "BLINDAJE", 370, 40, CyberTheme::cBlack);
+    drawNeobrutalRect(370, 30, 240, 80, CyberTheme::cWhite, 4, 6);
+    drawText(fontSmall_, "BLINDAJE", 390, 40, CyberTheme::cBlack);
     for (int l = 0; l < 3; ++l) {
         SDL_Color hpCol = (l < lives) ? CyberTheme::cGreen : CyberTheme::cSilver;
-        drawNeobrutalRect(370 + l * 60, 68, 48, 26, hpCol, 3, 2);
+        drawNeobrutalRect(390 + l * 65, 68, 52, 26, hpCol, 3, 2);
     }
 
     // 3. Combo Activo
     if (combo > 1) {
-        drawNeobrutalRect(600, 30, 200, 80, CyberTheme::cYellow, 4, 6);
-        drawText(fontSmall_, "COMBO", 620, 40, CyberTheme::cBlack);
-        drawText(fontHud_, "x" + std::to_string(combo), 620, 62, CyberTheme::cBlack);
+        drawNeobrutalRect(640, 30, 200, 80, CyberTheme::cYellow, 4, 6);
+        drawText(fontSmall_, "COMBO", 660, 40, CyberTheme::cBlack);
+        drawText(fontHud_, "x" + std::to_string(combo), 660, 62, CyberTheme::cBlack);
     }
-
-    // 4. Tiempo restante (Superior Derecha)
-    char timeBuf[32];
-    std::snprintf(timeBuf, sizeof(timeBuf), "TIEMPO: %02d", static_cast<int>(timeLeft));
-    drawNeobrutalRect(1920 - 320, 30, 280, 80, CyberTheme::cYellow, 4, 6);
-    drawText(fontHud_, timeBuf, 1920 - 180, 52, CyberTheme::cBlack, true);
 }
 
 void GameRenderer::renderHud1v1(int p1Score, int p1Combo, int p2Score, int p2Combo, float timeLeft) {
@@ -374,3 +368,4 @@ void GameRenderer::renderFloatingScores(const std::vector<FloatingScore>& scores
         drawText(fontSmall_, fs.text, static_cast<int>(fs.x), static_cast<int>(fs.y), col, true);
     }
 }
+

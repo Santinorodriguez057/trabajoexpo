@@ -116,6 +116,7 @@ int main(int argc, char* argv[]) {
     }
 
     SDL_RenderSetLogicalSize(renderer, kWidth, kHeight);
+    SDL_ShowCursor(SDL_DISABLE); // Ocultar cursor del mouse en todo el juego
 
     TTF_Font* fontTitle = loadSystemFont(54);
     TTF_Font* fontHud   = loadSystemFont(32);
@@ -287,9 +288,16 @@ int main(int argc, char* argv[]) {
             }
 
         } else if (state == GameState::PLAYING) {
-            matchTimer -= dtReal;
-            if (matchTimer <= 0.0f || (!isVersus && scoreSys.isGameOver())) {
-                state = GameState::GAME_OVER;
+            if (isVersus) {
+                matchTimer -= dtReal;
+                if (matchTimer <= 0.0f) {
+                    state = GameState::GAME_OVER;
+                }
+            } else {
+                // Modo Solo: dura hasta que el jugador se queda sin vidas (por bomba o por dejar caer objetos)
+                if (scoreSys.isGameOver()) {
+                    state = GameState::GAME_OVER;
+                }
             }
 
             touchP1.update(dtReal, kWidth, kHeight);
@@ -301,6 +309,13 @@ int main(int argc, char* argv[]) {
 
             for (auto& e : entities) {
                 e.update(dt);
+                // En Modo Solo: dejar caer un objeto puntuable (que no sea mina PEM) quita 1 vida
+                if (!isVersus && e.isDropped() && e.getType() != EntityType::EMP_MINE) {
+                    scoreSys.registerDropMiss(e.getX(), kHeight - 80.0f);
+                    Mix_PlayChannel(-1, sfxExplode, 0);
+                    touchP1.triggerHaptic(0.8f, 0.5f, 250);
+                    touchP1.setLED(239, 68, 68);
+                }
             }
 
             // Procesar cortes de ambos jugadores
@@ -459,7 +474,7 @@ int main(int argc, char* argv[]) {
                                      matchTimer);
             } else {
                 gameRen.renderHudSolo(scoreSys.getScore(0), scoreSys.getCombo(0),
-                                      scoreSys.getLives(), matchTimer);
+                                      scoreSys.getLives());
             }
         } else if (state == GameState::GAME_OVER) {
             int boxW = 760;

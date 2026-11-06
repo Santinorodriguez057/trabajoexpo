@@ -30,7 +30,7 @@ public:
     void renderHalves(const std::vector<CutHalf>& halves);
     void renderParticles(const std::vector<SparkParticle>& particles);
     void renderTrails(const std::vector<SlashTrailPoint>& trail, SDL_Color col);
-    void renderHudSolo(int score, int combo, int lives, float timeLeft);
+    void renderHudSolo(int score, int combo, int lives);
     void renderHud1v1(int p1Score, int p1Combo, int p2Score, int p2Combo, float timeLeft);
     void renderFloatingScores(const std::vector<FloatingScore>& scores);
 
@@ -60,3 +60,4 @@ private:
     void drawMechaShuriken(float cx, float cy, float radius, float angle);
     void drawEmpMine(float cx, float cy, float radius, float angle);
 };
+

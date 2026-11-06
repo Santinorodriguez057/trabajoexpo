@@ -31,6 +31,7 @@ public:
 
     void update(float dt);
     bool isAlive() const { return alive_; }
+    bool isDropped() const { return dropped_; }
     void kill() { alive_ = false; }
 
     EntityType getType() const { return type_; }
@@ -56,4 +57,5 @@ private:
     float idealAngle_ = 0.0f;
     bool hasMandatoryAngle_ = false;
     bool alive_ = true;
+    bool dropped_ = false;
 };
