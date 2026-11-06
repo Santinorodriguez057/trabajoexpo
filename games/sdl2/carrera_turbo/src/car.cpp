@@ -37,11 +37,11 @@ void Car::reset() {
 void Car::triggerNitro() {
     if (nitroInventory_ > 0 && nitroTimer_ <= 0.0f) {
         nitroInventory_--;
-        nitroTimer_ = 1.4f; // Impulso concentrado estilo Champiñón de Mario Kart (~1.4s)
-        // Patada instantánea de velocidad (Instant Boost):
-        // Da un empujón directo de +65 km/h instantáneo hasta alcanzar o superar el tope
-        speed_ = std::min(speed_ + 65.0f, 260.0f);
-        pitch_ += 8.0f;     // Tirón hacia atrás al acelerar
+        nitroTimer_ = 1.7f; // Impulso concentrado estilo Champiñón rojo de Mario Kart (~1.7s)
+        // Patada instantánea sin importar la marcha:
+        // Catapulta la velocidad de inmediato a ~255 km/h o suma +80 km/h si ya iba rápido
+        speed_ = std::clamp(std::max(speed_ + 80.0f, 255.0f), 0.0f, 280.0f);
+        pitch_ += 10.0f;    // Fuerte tirón hacia atrás por aceleración brutal
     }
 }
 
@@ -311,9 +311,9 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
     float aeroDrag = speedRatio * speedRatio * 18.0f;
     float rollingResistance = 4.0f + speedRatio * 4.0f;
 
-    // Efecto 4: Freno motor proporcional a la marcha y RPM
+    // 314: Efecto 4: Freno motor proporcional a la marcha y RPM (Anulado mientras sopla el Nitro)
     float engineBraking = 0.0f;
-    if (gear_ != 0) {
+    if (gear_ != 0 && nitroTimer_ <= 0.0f) {
         if (input.throttle < 0.05f) {
             engineBraking = (rpm_ / redlineRpm) * (std::abs(gearRatio) * 6.5f);
             if (rpm_ > 6000.0f) {
@@ -337,13 +337,19 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
         speed_ = std::clamp(speed_, -gearMaxPhysicalSpeed, 0.0f);
     } else if (gear_ == 0) {
         // Neutral: No hay fuerza de tracción, el auto desacelera por inercia
-        speed_ = std::max(0.0f, speed_ - (rollingResistance + aeroDrag) * dt);
+        // (A menos que esté activo el impulso de Nitro que empuja sin importar la marcha)
+        if (nitroTimer_ > 0.0f) {
+            speed_ = std::max(speed_, 255.0f);
+        } else {
+            speed_ = std::max(0.0f, speed_ - (rollingResistance + aeroDrag) * dt);
+        }
     } else {
         // Marchas 1 a 5 hacia adelante
         speed_ += (driveForce - rollingResistance - aeroDrag - engineBraking) * dt;
         if (speed_ < 0.0f) speed_ = 0.0f;
         // Limitación física estricta de la marcha (ej: en 1ª no puede superar ~57 km/h al corte)
-        if (speed_ > gearMaxPhysicalSpeed) {
+        // EXCEPCIÓN: Mientras el nitro esté activo, el auto vuela sin respetar la marcha actual
+        if (nitroTimer_ <= 0.0f && speed_ > gearMaxPhysicalSpeed) {
             speed_ = std::max(gearMaxPhysicalSpeed, speed_ - 45.0f * dt);
         }
     }
@@ -429,12 +435,13 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
     // Actualización de temporizadores de Nitro, Limpiaparabrisas y Alarma
     if (nitroTimer_ > 0.0f) {
         nitroTimer_ -= dt;
-        pitch_ += 1.8f; // Mantiene la trompa levantada mientras sopla el nitro
-        // Durante el impulso de nitro mantiene velocidad alta
+        pitch_ += 2.5f; // Mantiene la trompa levantada mientras ruge el nitro
+        // Durante el impulso de nitro mantiene velocidad sostenida de aceleración máxima
+        speed_ = std::max(speed_, 250.0f);
     } else {
-        // Al terminar el turbo, la velocidad decrece gradualmente a la velocidad natural de la marcha (estilo Mario Kart)
+        // Al terminar el turbo, la velocidad decrece suave y deportivamente hacia la velocidad natural de la marcha
         if (gear_ > 0 && speed_ > gearMaxPhysicalSpeed) {
-            speed_ = std::max(gearMaxPhysicalSpeed, speed_ - 55.0f * dt);
+            speed_ = std::max(gearMaxPhysicalSpeed, speed_ - 75.0f * dt);
         }
     }
 

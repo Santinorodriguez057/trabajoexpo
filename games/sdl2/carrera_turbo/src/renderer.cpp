@@ -933,20 +933,33 @@ void Renderer::renderProp(const RoadProp& prop, int screenX, int screenY, float 
         }
 
     } else if (prop.type == PropType::MUD_PUDDLE) {
-        // Charco de barro sobre el asfalto (elipse oscura marrón con salpicaduras)
-        if (roadScreenW < 8.0f) return;
-        int mudW = std::clamp(static_cast<int>(roadScreenW * 0.22f), 14, 260);
-        int mudH = std::clamp(static_cast<int>(roadScreenW * 0.05f), 4, 60);
+        // Charco de barro sobre el asfalto (visibilidad ampliada, textura de lodo húmedo y borde grueso)
+        if (roadScreenW < 6.0f) return;
+        // Ocupa más ancho de carril (~44% del ancho de la pista en esa sección) para verse claro a la distancia
+        int mudW = std::clamp(static_cast<int>(roadScreenW * 0.44f), 24, 480);
+        int mudH = std::clamp(static_cast<int>(roadScreenW * 0.11f), 8, 120);
 
-        // Charco plano en perspectiva
+        // 1. Mancha exterior profunda de lodo oscuro y húmedo
         renderPolygon(screenX - mudW / 2, screenY,
-                      screenX - mudW / 4, screenY - mudH,
-                      screenX + mudW / 4, screenY - mudH,
+                      screenX - mudW * 0.38f, screenY - mudH,
+                      screenX + mudW * 0.38f, screenY - mudH,
                       screenX + mudW / 2, screenY,
-                      {92, 51, 23, 230});
-        // Borde exterior húmedo
-        renderThickLine(screenX - mudW / 2, screenY, screenX + mudW / 2, screenY, 3.0f, {65, 34, 15, 255});
-        renderThickLine(screenX - mudW / 4, screenY - mudH, screenX + mudW / 4, screenY - mudH, 2.0f, {120, 68, 32, 255});
+                      {70, 36, 14, 250});
+
+        // 2. Núcleo viscoso de barro con brillo
+        int coreW = static_cast<int>(mudW * 0.72f);
+        int coreH = static_cast<int>(mudH * 0.65f);
+        renderPolygon(screenX - coreW / 2, screenY - 2,
+                      screenX - coreW * 0.35f, screenY - coreH,
+                      screenX + coreW * 0.35f, screenY - coreH,
+                      screenX + coreW / 2, screenY - 2,
+                      {110, 58, 24, 255});
+
+        // 3. Bordes y marcas de salpicadura neobrutalistas que contrastan con el asfalto gris
+        renderThickLine(screenX - mudW / 2, screenY, screenX + mudW / 2, screenY, 4.0f, {42, 22, 8, 255});
+        renderThickLine(screenX - mudW * 0.38f, screenY - mudH, screenX + mudW * 0.38f, screenY - mudH, 3.0f, {145, 82, 38, 255});
+        renderThickLine(screenX - mudW * 0.46f, screenY - mudH * 0.45f, screenX - mudW * 0.30f, screenY - mudH * 0.45f, 3.0f, {50, 26, 10, 255});
+        renderThickLine(screenX + mudW * 0.30f, screenY - mudH * 0.45f, screenX + mudW * 0.46f, screenY - mudH * 0.45f, 3.0f, {50, 26, 10, 255});
     }
 }
 

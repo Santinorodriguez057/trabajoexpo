@@ -210,10 +210,10 @@ void Road::generateTrack(bool isTimeAttack, bool enableNitroAndMud) {
                 float nitroOffsets[3] = {-0.55f, 0.0f, 0.55f};
                 float off = nitroOffsets[(i / 38) % 3];
                 segments_[i].props.push_back({PropType::NITRO_BOTTLE, off});
-            } else if (i % 45 == 22) {
-                // Charcos de barro técnico
-                float mudOffsets[3] = {0.45f, -0.45f, 0.0f};
-                float off = mudOffsets[(i / 45) % 3];
+            } else if (i % 26 == 13) {
+                // Charcos de barro técnico más frecuentes y notorios en la calzada
+                float mudOffsets[4] = {0.48f, -0.48f, 0.15f, -0.20f};
+                float off = mudOffsets[(i / 26) % 4];
                 segments_[i].props.push_back({PropType::MUD_PUDDLE, off});
             }
         }
