@@ -385,22 +385,22 @@ void Car::update(float dt, const InputState& input, float currentCurve, bool man
     float absSpeedRatio = std::abs(speed_) / params_.maxSpeed;
 
 
-    // Agarre lateral deportivo y receptivo
-    float effectiveGrip = params_.grip * 2.2f;
+    // Agarre lateral deportivo y receptivo acorde a las curvas más pronunciadas
+    float effectiveGrip = params_.grip * 2.55f;
     if (isDrifting_) effectiveGrip *= 1.30f;
     if (offRoad) effectiveGrip *= 0.65f;
 
     // MODELO DE CURVAS JUGABLE:
     // - A baja velocidad (80-120 km/h) el auto tiene buen agarre para doblar limpiamente en 2ª/3ª.
-    // - A alta velocidad (>140 km/h), la fuerza centrífuga (que crece al cuadrado) supera el agarre en curvas cerradas,
-    //   haciendo imposible pasar a fondo en 5ª marcha y forzando a frenar antes del vértice.
+    // - A alta velocidad (>135 km/h), la fuerza centrífuga (que crece al cuadrado) supera el agarre en curvas cerradas,
+    //   haciendo imposible pasar a fondo en 5ª/6ª marcha y forzando a frenar antes del vértice.
     float speedRatioNorm = std::clamp(speed_ / params_.maxSpeed, 0.0f, 1.0f);
-    float steerAuthority = effectiveGrip * (0.35f + 0.65f * speedRatioNorm);
+    float steerAuthority = effectiveGrip * (0.38f + 0.62f * speedRatioNorm);
     if (speed_ < 5.0f) steerAuthority *= speed_ / 5.0f; // detenido no se desplaza
     float steerPush = input.steering * steerAuthority;
 
-    // Fuerza centrífuga calibrada: castiga intentar tomar curvas cerradas a más de 135 km/h
-    float centrifugal = currentCurve * speedRatioNorm * speedRatioNorm * 2.55f;
+    // Fuerza centrífuga calibrada para curvas pronunciadas: empuja con fuerza hacia el exterior si no reduces velocidad
+    float centrifugal = currentCurve * speedRatioNorm * speedRatioNorm * 2.40f;
 
     // INERCIA LATERAL: respuesta directa y progresiva en curvas (~0.10s) para que la trazada se sienta 100% conectada al volante
     float targetLatVel = steerPush - centrifugal;

@@ -406,8 +406,8 @@ void Renderer::renderRoad(const Road& road, const Car& car, float horizonY, floa
     // cada 12 metros cuando basePercent pasa de 0.99 a 0.00.
     // - n = 0 está anclado exactamente en el plano cercano del auto (dt0 = 1.0 - basePercent hasta el borde de seg1).
     // - La integración trapezoidal fraccional acumula curRelX y ddx sin saltos discretos entre segmentos.
-    const float kCurveRender = 55.0f;
-    const float kLookaheadMax = 135.0f;
+    const float kCurveRender = 82.0f;
+    const float kLookaheadMax = 150.0f;
     float curRelX = 0.0f;
     float ddx = 0.0f;
 
@@ -2242,7 +2242,7 @@ void Renderer::renderPlayerView(const Road& road, const Car& car, float raceTime
     lastTrackZ_[pIdx] = car.getTrackZ();
     float segT = car.getTrackZ() / Road::kSegmentLength - baseSeg;
     float curveHere = road.getSegment(baseSeg).curve * (1.0f - segT) + road.getSegment(baseSeg + 1).curve * segT;
-    skyPan_[pIdx] += curveHere * dz * 0.28f;
+    skyPan_[pIdx] += curveHere * dz * 0.42f;
     skyParallaxX_ = skyPan_[pIdx];
     float speedRatio = car.getSpeedRatio();
     (void)speedRatio;

@@ -47,7 +47,7 @@ void Road::addCurve(int num, float curve, float endY) {
     for (int i = 0; i < num; ++i) {
         float t = static_cast<float>(i) / num;
         // Factor global para curvas más pronunciadas (afecta visual, física y minimapa por igual)
-        const float kCurveBoost = 1.3f;
+        const float kCurveBoost = 1.68f;
         float c = std::sin(t * 3.14159265f) * curve * kCurveBoost;
         float y = startY + (endY - startY) * (0.5f - 0.5f * std::cos(t * 3.14159265f));
         addSegment(c, y);
