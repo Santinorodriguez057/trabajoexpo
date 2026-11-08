@@ -591,27 +591,46 @@ void GameRenderer::renderTrails(const std::vector<SlashTrailPoint>& trail, SDL_C
         if (w > 6.0f) renderThickLine(a.x, a.y, b.x, b.y, w * 0.36f, innerCol);
     }
     if (fingerDown) {
-        // Retícula táctica Cyber-Ninja dinámica
-        float rotAngle = time * 380.0f;
-        float curSize = isDual ? 42.0f : 32.0f;
-
-        // Anillo / Marco exterior duro
-        drawStampBox(fx, fy, curSize, curSize, rotAngle, mainCol, 4, 6);
-        drawStampBox(fx, fy, curSize * 0.5f, curSize * 0.5f, -rotAngle * 1.5f, CyberTheme::cBlack, 2, 0);
-
-        // Centro brillante del color del filo
-        drawQuad(fx, fy, 8.0f, 8.0f, 45.0f, innerCol);
-
-        // Micro-aspas tácticas en las 4 esquinas de la mira
-        for (int i = 0; i < 4; ++i) {
-            float a = (rotAngle * 3.14159f / 180.0f) + (i * 3.14159f * 0.5f);
-            float bx = fx + std::cos(a) * (curSize * 0.72f);
-            float by = fy + std::sin(a) * (curSize * 0.72f);
-            renderThickLine(fx + std::cos(a) * (curSize * 0.4f), fy + std::sin(a) * (curSize * 0.4f),
-                            bx, by, 4.0f, CyberTheme::cBlack);
-            renderThickLine(fx + std::cos(a) * (curSize * 0.4f), fy + std::sin(a) * (curSize * 0.4f),
-                            bx, by, 2.0f, innerCol);
+        // Ángulo de dirección del movimiento o reposo a 45 grados
+        float moveAngleDeg = 45.0f;
+        if (trail.size() >= 2) {
+            const auto& pPrev = trail[trail.size() - 2];
+            const auto& pCur  = trail.back();
+            float dx = pCur.x - pPrev.x;
+            float dy = pCur.y - pPrev.y;
+            if (dx * dx + dy * dy > 4.0f) {
+                moveAngleDeg = std::atan2(dy, dx) * (180.0f / kPi);
+            }
         }
+
+        float baseScale = isDual ? 1.38f : 1.0f;
+        float pulse = 1.0f + 0.08f * std::sin(time * 10.0f);
+        float rRing = 24.0f * baseScale * pulse;
+
+        // 1. Anillo táctico exterior limpio con reborde negro duro
+        drawRing(fx + 4.0f, fy + 4.0f, rRing, 7.0f, CyberTheme::cBlack); // Sombra dura desplazada
+        drawRing(fx, fy, rRing, 8.0f, CyberTheme::cBlack);               // Reborde negro
+        drawRing(fx, fy, rRing, 3.5f, mainCol);                          // Relleno neón
+
+        // 2. Cuatro brackets / miras de precisión en cruz que respiran suavemente
+        float bracketIn  = rRing - 6.0f;
+        float bracketOut = rRing + 9.0f;
+        for (int i = 0; i < 4; ++i) {
+            float a = i * (kPi * 0.5f) + (kPi * 0.25f); // En las 4 diagonales (45°, 135°, 225°, 315°)
+            float x1 = fx + std::cos(a) * bracketIn;
+            float y1 = fy + std::sin(a) * bracketIn;
+            float x2 = fx + std::cos(a) * bracketOut;
+            float y2 = fy + std::sin(a) * bracketOut;
+            renderThickLine(x1 + 3.0f, y1 + 3.0f, x2 + 3.0f, y2 + 3.0f, 7.0f, CyberTheme::cBlack);
+            renderThickLine(x1, y1, x2, y2, 7.0f, CyberTheme::cBlack);
+            renderThickLine(x1, y1, x2, y2, 3.5f, innerCol);
+        }
+
+        // 3. Núcleo Kunai / Diamante afilado orientado hacia el movimiento del tajo
+        float coreW = 22.0f * baseScale;
+        float coreH = 11.0f * baseScale;
+        drawStampBox(fx, fy, coreW, coreH, moveAngleDeg, mainCol, 3, 4);
+        drawQuad(fx, fy, coreW * 0.52f, coreH * 0.48f, moveAngleDeg, innerCol);
     }
 }
 

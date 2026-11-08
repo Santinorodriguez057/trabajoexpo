@@ -49,21 +49,29 @@ namespace {
                 sample = std::sin(2.0f * 3.14159f * curFreq * t) * 0.75f +
                          std::sin(2.0f * 3.14159f * curFreq * 1.5f * t) * 0.25f;
             } else if (type == 4) {
-                // Killstreak estilo Valorant: armónicos cristalinos agudos ascendentes con sustain
-                float h1 = std::sin(2.0f * 3.14159f * curFreq * t);
-                float h2 = std::sin(2.0f * 3.14159f * curFreq * 2.0f * t) * 0.45f;
-                float h3 = std::sin(2.0f * 3.14159f * curFreq * 3.0f * t) * 0.22f;
-                float shimmer = std::sin(2.0f * 3.14159f * 18.0f * t) * 0.15f;
-                sample = (h1 + h2 + h3) * (1.0f + shimmer);
-                env = std::exp(-frac * 3.2f); // Caída más resonante tipo campana
+                // Killstreak estilo Valorant / LoL: golpe percusivo grave + nota cálida resonante (sin vibrato molesto)
+                float attack = std::min(1.0f, i / (sampleRate * 0.004f));
+                // Sub-thump inicial ("punch" de satisfacción tipo hitmarker de Valorant)
+                float punchFreq = 135.0f * std::exp(-t * 32.0f) + 52.0f;
+                float punch = std::sin(2.0f * 3.14159f * punchFreq * t) * std::exp(-t * 24.0f) * 0.65f;
+
+                // Nota musical en acorde de quinta justa (poderoso y limpio) con octava grave de cuerpo
+                float subOct = std::sin(2.0f * 3.14159f * (curFreq * 0.5f) * t) * 0.40f;
+                float root   = std::sin(2.0f * 3.14159f * curFreq * t) * 0.55f;
+                float fifth  = std::sin(2.0f * 3.14159f * (curFreq * 1.4983f) * t) * 0.32f;
+                float spark  = std::sin(2.0f * 3.14159f * (curFreq * 2.0f) * t) * std::exp(-frac * 10.0f) * 0.22f;
+
+                sample = (punch + (subOct + root + fifth + spark) * std::exp(-frac * 4.5f)) * attack;
+                env = 1.0f; // La envolvente ya está aplicada con precisión por componente
             } else if (type == 5) {
-                // Fanfarria racha máxima / Powerup activado: acorde triunfal con brillo
-                float c1 = std::sin(2.0f * 3.14159f * curFreq * t);
-                float c2 = std::sin(2.0f * 3.14159f * (curFreq * 1.2599f) * t) * 0.75f; // Tercera mayor
-                float c3 = std::sin(2.0f * 3.14159f * (curFreq * 1.4983f) * t) * 0.65f; // Quinta justa
-                float c4 = std::sin(2.0f * 3.14159f * (curFreq * 2.0f) * t) * 0.5f;     // Octava
-                sample = (c1 + c2 + c3 + c4) * 0.5f;
-                env = std::exp(-frac * 2.2f);
+                // Fanfarria de Power-up / Ace: barrido de acorde mayor cálido con impacto grave
+                float attack = std::min(1.0f, i / (sampleRate * 0.006f));
+                float bass   = std::sin(2.0f * 3.14159f * (curFreq * 0.5f) * t) * 0.45f;
+                float c1     = std::sin(2.0f * 3.14159f * curFreq * t) * 0.50f;
+                float c2     = std::sin(2.0f * 3.14159f * (curFreq * 1.2599f) * t) * 0.38f; // Tercera mayor
+                float c3     = std::sin(2.0f * 3.14159f * (curFreq * 1.4983f) * t) * 0.35f; // Quinta justa
+                sample = (bass + c1 + c2 + c3) * 0.52f * attack;
+                env = std::exp(-frac * 3.2f);
             }
 
             float val = std::clamp(sample * env * volume * 32760.0f, -32760.0f, 32760.0f);
@@ -158,14 +166,14 @@ int main(int argc, char* argv[]) {
     Mix_Chunk* sfxExplode = createProceduralTone(380, 180, 50, 0.85f, 2);
     Mix_Chunk* sfxBeep    = createProceduralTone(110, 660, 660, 0.55f, 3);
     Mix_Chunk* sfxGo      = createProceduralTone(220, 880, 1320, 0.7f, 3);
-    Mix_Chunk* sfxPowerup = createProceduralTone(350, 523, 1046, 0.85f, 5); // Fanfarria triunfal power-up
+    Mix_Chunk* sfxPowerup = createProceduralTone(300, 330, 660, 0.75f, 5); // Fanfarria cálida de power-up
 
-    // Escala ascendente de killstreak (estilo Valorant: C5 -> C6)
-    // Frecuencias: Do, Re, Mi, Fa, Sol, La, Si, Do agudo
-    const int streakFreqs[8] = {523, 587, 659, 698, 784, 880, 988, 1046};
+    // Escala pentatónica menor ascendente (estilo Killstreak Valorant: A3 -> C4 -> D4 -> E4 -> G4 -> A4 -> C5 -> E5)
+    // Registro medio-grave con cuerpo percusivo, sin frecuencias estridentes ni pitch-slide
+    const int streakFreqs[8] = {220, 262, 294, 330, 392, 440, 523, 659};
     Mix_Chunk* sfxKillstreak[8];
     for (int k = 0; k < 8; ++k) {
-        sfxKillstreak[k] = createProceduralTone(220, streakFreqs[k], streakFreqs[k] + 25, 0.75f, 4);
+        sfxKillstreak[k] = createProceduralTone(240, streakFreqs[k], streakFreqs[k], 0.72f, 4);
     }
 
     // Sistema de entrada táctil para P1 y P2
@@ -610,15 +618,17 @@ int main(int argc, char* argv[]) {
                             }
 
                             if (isPowerup) {
-                                Mix_PlayChannel(-1, sfxPowerup, 0);
+                                Mix_PlayChannel(3, sfxPowerup, 0);
                                 activeTouch.triggerHaptic(0.8f, 0.8f, 250);
                                 triggerShake(15.0f, 0.22f);
                             } else {
                                 // Racha Killstreak ascendente estilo Valorant según el combo actual
+                                // Se reproduce en un canal dedicado (1 o 2) para que al cortar varios objetos juntos
+                                // cada nota reemplace limpiamente a la anterior sin saturar ni distorsionar.
                                 int curCombo = scoreSys.getCombo(pIdx);
                                 if (curCombo >= 2) {
                                     int noteIdx = std::clamp(curCombo - 2, 0, 7);
-                                    Mix_PlayChannel(-1, sfxKillstreak[noteIdx], 0);
+                                    Mix_PlayChannel(1 + pIdx, sfxKillstreak[noteIdx], 0);
                                 }
                             }
 
