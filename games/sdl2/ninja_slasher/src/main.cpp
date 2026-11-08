@@ -582,7 +582,7 @@ int main(int argc, char* argv[]) {
                             // ¿Es un power-up especial?
                             bool isPowerup = false;
                             if (e.getType() == EntityType::POWERUP_FREEZE) {
-                                freezeTimer = 4.5f;
+                                freezeTimer = 2.0f;
                                 isPowerup = true;
                             } else if (e.getType() == EntityType::POWERUP_DUAL) {
                                 dualTimer[pIdx] = 6.0f;
