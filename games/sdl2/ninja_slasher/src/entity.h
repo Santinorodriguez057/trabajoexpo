@@ -8,7 +8,10 @@ enum class EntityType {
     ENERGY_CORE,    // Núcleo de energía esférico (normal, suma puntos)
     CYBER_DRONE,    // Robot volador / dron (con ángulo obligatorio de corte en su blindaje)
     MECHA_SHURIKEN, // Shuriken mecánico ultra-rápido (bonus dorado)
-    EMP_MINE        // Mina PEM flotante con picos (¡NO CORTAR! Penaliza/quita vida)
+    EMP_MINE,       // Mina PEM flotante con picos (¡NO CORTAR! Penaliza/quita vida)
+    POWERUP_FREEZE, // Cápsula Criogénica (Slow-Motion 4.5s)
+    POWERUP_DUAL,   // Núcleo de Doble Filo (Radio de corte y ancho de katana gigantes)
+    POWERUP_FRENZY  // Sobrecarga / Frenesí (Puntos x2 y estela ardiente)
 };
 
 struct CutHalf {

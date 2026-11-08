@@ -471,6 +471,36 @@ void GameRenderer::drawEntity(EntityType type, float cx, float cy, float r, floa
         drawTextScaled(fontHud_, "!", cx, cy, K, 1.0f, 0.0f, 0);
         break;
     }
+    case EntityType::POWERUP_FREEZE: {
+        // Cápsula hexagonal Criogénica con copo/diamante central
+        drawStampBox(cx, cy, r * 1.8f, r * 1.8f, angle * 18.0f, CyberTheme::cIceCyan, 4, 7);
+        drawStampBox(cx, cy, r * 1.1f, r * 1.1f, -angle * 28.0f, CyberTheme::cWhite, 3, 0);
+        // Cruz de hielo
+        renderThickLine(cx - r * 0.45f, cy, cx + r * 0.45f, cy, 6.0f, K);
+        renderThickLine(cx, cy - r * 0.45f, cx, cy + r * 0.45f, 6.0f, K);
+        drawRing(cx, cy, r * 0.9f + 3.0f * std::sin(time * 8.0f), 3.0f, CyberTheme::cWhite);
+        break;
+    }
+    case EntityType::POWERUP_DUAL: {
+        // Cápsula de Doble Filo / Espadas Gemelas
+        drawStampBox(cx, cy, r * 1.85f, r * 1.85f, 45.0f, CyberTheme::cYellow, 4, 7);
+        drawNeobrutalCircle(icx, icy, static_cast<int>(r * 0.55f), CyberTheme::cBlack, 0, 0);
+        // Dos filos cruzados en X
+        float kLen = r * 0.55f;
+        renderThickLine(cx - kLen, cy - kLen, cx + kLen, cy + kLen, 7.0f, CyberTheme::cWhite);
+        renderThickLine(cx + kLen, cy - kLen, cx - kLen, cy + kLen, 7.0f, CyberTheme::cWhite);
+        renderThickLine(cx - kLen, cy - kLen, cx + kLen, cy + kLen, 3.0f, CyberTheme::cYellow);
+        renderThickLine(cx + kLen, cy - kLen, cx - kLen, cy + kLen, 3.0f, CyberTheme::cYellow);
+        break;
+    }
+    case EntityType::POWERUP_FRENZY: {
+        // Cápsula de Fuego / Frenesí (Naranja brillante con núcleo llameante)
+        float pulse = 1.0f + 0.12f * std::sin(time * 12.0f);
+        drawStampBox(cx, cy, r * 1.8f * pulse, r * 1.8f * pulse, angle * 35.0f, CyberTheme::cNeonFlame, 4, 7);
+        drawStampBox(cx, cy, r * 1.0f, r * 1.0f, -angle * 45.0f, CyberTheme::cYellow, 3, 0);
+        drawTextScaled(fontHud_, "2X", cx, cy, K, 1.0f * pulse, 0.0f, 0);
+        break;
+    }
     }
 }
 
@@ -489,6 +519,9 @@ void GameRenderer::renderHalves(const std::vector<CutHalf>& halves) {
             case EntityType::CYBER_DRONE:    fill = CyberTheme::cPurple; inner = {76, 29, 149, 255}; break;
             case EntityType::MECHA_SHURIKEN: fill = CyberTheme::cYellow; inner = CyberTheme::cWhite; break;
             case EntityType::EMP_MINE:       fill = CyberTheme::cRed;    inner = CyberTheme::cBlack; break;
+            case EntityType::POWERUP_FREEZE: fill = CyberTheme::cIceCyan; inner = CyberTheme::cWhite; break;
+            case EntityType::POWERUP_DUAL:   fill = CyberTheme::cYellow; inner = CyberTheme::cOrange; break;
+            case EntityType::POWERUP_FRENZY: fill = CyberTheme::cNeonFlame; inner = CyberTheme::cYellow; break;
         }
         float startA = h.cutAngle + (h.side > 0 ? 0.0f : kPi);
         float r = h.radius;
@@ -536,25 +569,49 @@ void GameRenderer::renderSlashFlashes(const std::vector<SlashFlash>& flashes) {
     }
 }
 
-void GameRenderer::renderTrails(const std::vector<SlashTrailPoint>& trail, SDL_Color col, bool fingerDown, float fx, float fy) {
+void GameRenderer::renderTrails(const std::vector<SlashTrailPoint>& trail, SDL_Color col,
+                                bool fingerDown, float fx, float fy, float time,
+                                bool isFrenzy, bool isDual) {
+    SDL_Color mainCol = isFrenzy ? CyberTheme::cNeonFlame : col;
+    SDL_Color innerCol = isFrenzy ? CyberTheme::cYellow : CyberTheme::cWhite;
+
     for (size_t i = 1; i < trail.size(); ++i) {
         const auto& a = trail[i - 1];
         const auto& b = trail[i];
         float w = (a.width + b.width) * 0.5f;
         if (w < 1.0f) continue;
-        renderThickLine(a.x, a.y, b.x, b.y, w + 9.0f, CyberTheme::cBlack);
+        renderThickLine(a.x, a.y, b.x, b.y, w + 10.0f, CyberTheme::cBlack);
     }
     for (size_t i = 1; i < trail.size(); ++i) {
         const auto& a = trail[i - 1];
         const auto& b = trail[i];
         float w = (a.width + b.width) * 0.5f;
         if (w < 1.0f) continue;
-        renderThickLine(a.x, a.y, b.x, b.y, w, col);
-        if (w > 7.0f) renderThickLine(a.x, a.y, b.x, b.y, w * 0.32f, CyberTheme::cWhite);
+        renderThickLine(a.x, a.y, b.x, b.y, w, mainCol);
+        if (w > 6.0f) renderThickLine(a.x, a.y, b.x, b.y, w * 0.36f, innerCol);
     }
     if (fingerDown) {
-        drawStampBox(fx, fy, 24.0f, 24.0f, 45.0f, col, 4, 5);
-        drawQuad(fx, fy, 9.0f, 9.0f, 45.0f, CyberTheme::cWhite);
+        // Retícula táctica Cyber-Ninja dinámica
+        float rotAngle = time * 380.0f;
+        float curSize = isDual ? 42.0f : 32.0f;
+
+        // Anillo / Marco exterior duro
+        drawStampBox(fx, fy, curSize, curSize, rotAngle, mainCol, 4, 6);
+        drawStampBox(fx, fy, curSize * 0.5f, curSize * 0.5f, -rotAngle * 1.5f, CyberTheme::cBlack, 2, 0);
+
+        // Centro brillante del color del filo
+        drawQuad(fx, fy, 8.0f, 8.0f, 45.0f, innerCol);
+
+        // Micro-aspas tácticas en las 4 esquinas de la mira
+        for (int i = 0; i < 4; ++i) {
+            float a = (rotAngle * 3.14159f / 180.0f) + (i * 3.14159f * 0.5f);
+            float bx = fx + std::cos(a) * (curSize * 0.72f);
+            float by = fy + std::sin(a) * (curSize * 0.72f);
+            renderThickLine(fx + std::cos(a) * (curSize * 0.4f), fy + std::sin(a) * (curSize * 0.4f),
+                            bx, by, 4.0f, CyberTheme::cBlack);
+            renderThickLine(fx + std::cos(a) * (curSize * 0.4f), fy + std::sin(a) * (curSize * 0.4f),
+                            bx, by, 2.0f, innerCol);
+        }
     }
 }
 
@@ -613,6 +670,27 @@ void GameRenderer::renderHudSolo(const HudSoloData& d) {
         drawNeobrutalRect(kW - 360, 392, 280, 22, CyberTheme::cWhite, 4, 5);
         drawNeobrutalRect(kW - 360, 392, static_cast<int>(280 * clamp01(d.comboFrac)), 22, tc, 0, 0);
     }
+
+    // Indicadores activos de Power-ups (Sellos flotantes de estado)
+    float badgeY = 175.0f;
+    if (d.freezeTimer > 0.0f) {
+        float fP = 1.0f + 0.08f * std::sin(d.time * 12.0f);
+        drawStamp(fontSmall_, "❄ CONGELAR: " + std::to_string(static_cast<int>(std::ceil(d.freezeTimer))) + "s",
+                  180.0f, badgeY, fP, -3.0f, CyberTheme::cIceCyan, K);
+        badgeY += 46.0f;
+    }
+    if (d.dualTimer > 0.0f) {
+        float dP = 1.0f + 0.08f * std::sin(d.time * 12.0f);
+        drawStamp(fontSmall_, "⚔ FILO DOBLE: " + std::to_string(static_cast<int>(std::ceil(d.dualTimer))) + "s",
+                  180.0f, badgeY, dP, 3.0f, CyberTheme::cYellow, K);
+        badgeY += 46.0f;
+    }
+    if (d.frenzyTimer > 0.0f) {
+        float rP = 1.0f + 0.08f * std::sin(d.time * 12.0f);
+        drawStamp(fontSmall_, "🔥 FRENESÍ X2: " + std::to_string(static_cast<int>(std::ceil(d.frenzyTimer))) + "s",
+                  180.0f, badgeY, rP, -2.0f, CyberTheme::cNeonFlame, K);
+        badgeY += 46.0f;
+    }
 }
 
 void GameRenderer::drawTugBar(int x, int y, int w, int h, int s1, int s2) {
@@ -644,6 +722,17 @@ void GameRenderer::renderHud1v1(const Hud1v1Data& d) {
             drawStamp(fontHud_, txt, bx[p] + 210.0f, 210.0f, pop, (p == 0) ? -5.0f : 5.0f,
                       comboTierColor(d.combo[p]), K);
         }
+
+        // Badges de powerup activo para cada jugador
+        float py = 265.0f;
+        if (d.dualTimer[p] > 0.0f) {
+            drawStamp(fontSmall_, "⚔ FILO DOBLE", bx[p] + 210.0f, py, 1.0f, 0.0f, CyberTheme::cYellow, K);
+            py += 38.0f;
+        }
+        if (d.frenzyTimer[p] > 0.0f) {
+            drawStamp(fontSmall_, "🔥 FRENESÍ X2", bx[p] + 210.0f, py, 1.0f, 0.0f, CyberTheme::cNeonFlame, K);
+            py += 38.0f;
+        }
     }
 
     // Temporizador central (late en rojo los últimos 10 segundos)
@@ -658,6 +747,12 @@ void GameRenderer::renderHud1v1(const Hud1v1Data& d) {
 
     // Barra de dominio (tira y afloja de puntos)
     drawTugBar(560, 172, 800, 26, d.score[0], d.score[1]);
+
+    // Estado global de congelación si está activo en 1v1
+    if (d.freezeTimer > 0.0f) {
+        float fP = 1.0f + 0.08f * std::sin(d.time * 12.0f);
+        drawStamp(fontSmall_, "❄ TIEMPO RALENTIZADO ❄", 960.0f, 215.0f, fP, 0.0f, CyberTheme::cIceCyan, K);
+    }
 }
 
 // ===========================================================================

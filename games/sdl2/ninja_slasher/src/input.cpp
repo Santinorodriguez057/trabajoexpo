@@ -62,7 +62,8 @@ void TouchInput::handleEvent(const SDL_Event& ev, int screenW, int screenH) {
             prevY_ = currentY_;
             touchHistory_.clear();
             touchHistory_.push_back({currentX_, currentY_, 0.0f});
-            trailPoints_.push_back({currentX_, currentY_, 1.0f, 26.0f});
+            float tWidth = dualBlade_ ? 48.0f : 26.0f;
+            trailPoints_.push_back({currentX_, currentY_, 1.0f, tWidth});
         }
     } else if (ev.type == SDL_CONTROLLERTOUCHPADMOTION) {
         if (ev.ctouchpad.which == myId && ev.ctouchpad.touchpad == 0 && ev.ctouchpad.finger == 0) {
@@ -74,7 +75,8 @@ void TouchInput::handleEvent(const SDL_Event& ev, int screenW, int screenH) {
             currentX_ = ev.ctouchpad.x * screenW;
             currentY_ = ev.ctouchpad.y * screenH;
             touchHistory_.push_back({currentX_, currentY_, 0.0f});
-            trailPoints_.push_back({currentX_, currentY_, 1.0f, 26.0f});
+            float tWidth = dualBlade_ ? 48.0f : 26.0f;
+            trailPoints_.push_back({currentX_, currentY_, 1.0f, tWidth});
         }
     } else if (ev.type == SDL_CONTROLLERTOUCHPADUP) {
         if (ev.ctouchpad.which == myId && ev.ctouchpad.touchpad == 0 && ev.ctouchpad.finger == 0) {
@@ -111,7 +113,8 @@ void TouchInput::update(float dt, int screenW, int screenH) {
                         currentX_ = sx;
                         currentY_ = sy;
                         touchHistory_.push_back({sx, sy, 0.0f});
-                        trailPoints_.push_back({sx, sy, 1.0f, 26.0f});
+                        float tWidth = dualBlade_ ? 48.0f : 26.0f;
+                        trailPoints_.push_back({sx, sy, 1.0f, tWidth});
                     }
                 }
             } else {
@@ -161,7 +164,8 @@ void TouchInput::update(float dt, int screenW, int screenH) {
             fingerDown_ = true;
 
             touchHistory_.push_back({currentX_, currentY_, 0.0f});
-            trailPoints_.push_back({currentX_, currentY_, 1.0f, 26.0f});
+            float tWidth = dualBlade_ ? 48.0f : 26.0f;
+            trailPoints_.push_back({currentX_, currentY_, 1.0f, tWidth});
         } else {
             if (fingerDown_ && !controller_) {
                 fingerDown_ = false;
@@ -193,7 +197,8 @@ void TouchInput::update(float dt, int screenW, int screenH) {
         if (dist >= 24.0f) {
             float speed = dist / timeDiff;
             float angle = std::atan2(dy, dx);
-            activeSlashes_.push_back({pOld.x, pOld.y, pNew.x, pNew.y, angle, speed, playerIndex_});
+            float thick = dualBlade_ ? 42.0f : 14.0f;
+            activeSlashes_.push_back({pOld.x, pOld.y, pNew.x, pNew.y, angle, speed, playerIndex_, thick});
         }
     }
 

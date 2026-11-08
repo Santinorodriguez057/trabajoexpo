@@ -50,6 +50,9 @@ struct HudSoloData {
     float scorePop = 0.0f;
     float lifeShake = 0.0f;
     float time = 0.0f;
+    float freezeTimer = 0.0f;
+    float dualTimer = 0.0f;
+    float frenzyTimer = 0.0f;
 };
 
 struct Hud1v1Data {
@@ -60,6 +63,9 @@ struct Hud1v1Data {
     float scorePop[2] = {0.0f, 0.0f};
     float timeLeft = 60.0f;
     float time = 0.0f;
+    float freezeTimer = 0.0f;
+    float dualTimer[2] = {0.0f, 0.0f};
+    float frenzyTimer[2] = {0.0f, 0.0f};
 };
 
 struct MenuData {
@@ -108,7 +114,8 @@ public:
     void renderRings(const std::vector<ShockRing>& rings);
     void renderSlashFlashes(const std::vector<SlashFlash>& flashes);
     void renderTrails(const std::vector<SlashTrailPoint>& trail, SDL_Color col,
-                      bool fingerDown, float fx, float fy);
+                      bool fingerDown, float fx, float fy, float time = 0.0f,
+                      bool isFrenzy = false, bool isDual = false);
     void renderFloatingScores(const std::vector<FloatingScore>& scores);
 
     // Pantallas / HUD (sin sacudida)

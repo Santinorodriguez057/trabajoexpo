@@ -17,6 +17,7 @@ struct SlashSegment {
     float angleRad = 0.0f; // Dirección del corte en radianes
     float speed = 0.0f;    // Píxeles por segundo
     int playerIndex = 0;   // 0 = P1, 1 = P2
+    float thickness = 14.0f; // Radio de colisión / grosor
 };
 
 struct SlashTrailPoint {
@@ -49,6 +50,9 @@ public:
     float getFingerX() const { return currentX_; }
     float getFingerY() const { return currentY_; }
 
+    void setDualBlade(bool active) { dualBlade_ = active; }
+    bool isDualBlade() const { return dualBlade_; }
+
     bool isConnected() const { return controller_ != nullptr || arcadeStick_ != nullptr; }
 
     void triggerHaptic(float low, float high, Uint32 ms);
@@ -66,6 +70,7 @@ private:
     bool arcadeSlashing_ = false;
 
     bool fingerDown_ = false;
+    bool dualBlade_ = false;
     float currentX_ = 0.0f;
     float currentY_ = 0.0f;
     float prevX_ = 0.0f;

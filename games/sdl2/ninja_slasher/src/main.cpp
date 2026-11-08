@@ -48,6 +48,22 @@ namespace {
                 // Pulso limpio de cuenta regresiva / UI
                 sample = std::sin(2.0f * 3.14159f * curFreq * t) * 0.75f +
                          std::sin(2.0f * 3.14159f * curFreq * 1.5f * t) * 0.25f;
+            } else if (type == 4) {
+                // Killstreak estilo Valorant: armónicos cristalinos agudos ascendentes con sustain
+                float h1 = std::sin(2.0f * 3.14159f * curFreq * t);
+                float h2 = std::sin(2.0f * 3.14159f * curFreq * 2.0f * t) * 0.45f;
+                float h3 = std::sin(2.0f * 3.14159f * curFreq * 3.0f * t) * 0.22f;
+                float shimmer = std::sin(2.0f * 3.14159f * 18.0f * t) * 0.15f;
+                sample = (h1 + h2 + h3) * (1.0f + shimmer);
+                env = std::exp(-frac * 3.2f); // Caída más resonante tipo campana
+            } else if (type == 5) {
+                // Fanfarria racha máxima / Powerup activado: acorde triunfal con brillo
+                float c1 = std::sin(2.0f * 3.14159f * curFreq * t);
+                float c2 = std::sin(2.0f * 3.14159f * (curFreq * 1.2599f) * t) * 0.75f; // Tercera mayor
+                float c3 = std::sin(2.0f * 3.14159f * (curFreq * 1.4983f) * t) * 0.65f; // Quinta justa
+                float c4 = std::sin(2.0f * 3.14159f * (curFreq * 2.0f) * t) * 0.5f;     // Octava
+                sample = (c1 + c2 + c3 + c4) * 0.5f;
+                env = std::exp(-frac * 2.2f);
             }
 
             float val = std::clamp(sample * env * volume * 32760.0f, -32760.0f, 32760.0f);
@@ -142,6 +158,15 @@ int main(int argc, char* argv[]) {
     Mix_Chunk* sfxExplode = createProceduralTone(380, 180, 50, 0.85f, 2);
     Mix_Chunk* sfxBeep    = createProceduralTone(110, 660, 660, 0.55f, 3);
     Mix_Chunk* sfxGo      = createProceduralTone(220, 880, 1320, 0.7f, 3);
+    Mix_Chunk* sfxPowerup = createProceduralTone(350, 523, 1046, 0.85f, 5); // Fanfarria triunfal power-up
+
+    // Escala ascendente de killstreak (estilo Valorant: C5 -> C6)
+    // Frecuencias: Do, Re, Mi, Fa, Sol, La, Si, Do agudo
+    const int streakFreqs[8] = {523, 587, 659, 698, 784, 880, 988, 1046};
+    Mix_Chunk* sfxKillstreak[8];
+    for (int k = 0; k < 8; ++k) {
+        sfxKillstreak[k] = createProceduralTone(220, streakFreqs[k], streakFreqs[k] + 25, 0.75f, 4);
+    }
 
     // Sistema de entrada táctil para P1 y P2
     TouchInput touchP1(0, CyberTheme::cP1Cyan);
@@ -221,6 +246,11 @@ int main(int argc, char* argv[]) {
     bool prevBtnRestart = false;
     float menuDemoTimer = 0.8f;
 
+    // Temporizadores de Power-ups
+    float freezeTimer = 0.0f;
+    float dualTimer[2] = {0.0f, 0.0f};
+    float frenzyTimer[2] = {0.0f, 0.0f};
+
     auto triggerShake = [&](float mag, float dur) {
         if (mag > shakeMag || shakeTimer <= 0.0f) {
             shakeMag = mag;
@@ -298,6 +328,11 @@ int main(int argc, char* argv[]) {
         perfectsCount[0] = perfectsCount[1] = 0;
         maxCombo[0] = maxCombo[1] = 0;
         newRecordAchieved = false;
+        freezeTimer = 0.0f;
+        dualTimer[0] = dualTimer[1] = 0.0f;
+        frenzyTimer[0] = frenzyTimer[1] = 0.0f;
+        touchP1.setDualBlade(false);
+        touchP2.setDualBlade(false);
     };
 
     bool running = true;
@@ -312,14 +347,25 @@ int main(int argc, char* argv[]) {
 
         globalTime += dtReal;
 
+        // Actualizar temporizadores de power-ups
+        if (freezeTimer > 0.0f) freezeTimer = std::max(0.0f, freezeTimer - dtReal);
+        for (int p = 0; p < 2; ++p) {
+            if (dualTimer[p] > 0.0f) {
+                dualTimer[p] = std::max(0.0f, dualTimer[p] - dtReal);
+                if (p == 0) touchP1.setDualBlade(dualTimer[0] > 0.0f);
+                else touchP2.setDualBlade(dualTimer[1] > 0.0f);
+            }
+            if (frenzyTimer[p] > 0.0f) frenzyTimer[p] = std::max(0.0f, frenzyTimer[p] - dtReal);
+        }
+
         // Hit-stop (micro-pausa de impacto) y cámara lenta cinematográfica
         float dt = dtReal;
         if (hitStopTimer > 0.0f) {
             hitStopTimer -= dtReal;
             dt = 0.0f;
-        } else if (slowMoTimer > 0.0f) {
-            slowMoTimer -= dtReal;
-            dt *= 0.35f;
+        } else if (slowMoTimer > 0.0f || freezeTimer > 0.0f) {
+            if (slowMoTimer > 0.0f) slowMoTimer -= dtReal;
+            dt *= (freezeTimer > 0.0f) ? 0.30f : 0.35f;
         }
 
         if (shakeTimer > 0.0f) {
@@ -533,8 +579,26 @@ int main(int argc, char* argv[]) {
                             activeTouch.triggerHaptic(0.9f, 0.9f, 350);
                             activeTouch.setLED(239, 68, 68);
                         } else {
+                            // ¿Es un power-up especial?
+                            bool isPowerup = false;
+                            if (e.getType() == EntityType::POWERUP_FREEZE) {
+                                freezeTimer = 4.5f;
+                                isPowerup = true;
+                            } else if (e.getType() == EntityType::POWERUP_DUAL) {
+                                dualTimer[pIdx] = 6.0f;
+                                if (pIdx == 0) touchP1.setDualBlade(true);
+                                else touchP2.setDualBlade(true);
+                                isPowerup = true;
+                            } else if (e.getType() == EntityType::POWERUP_FRENZY) {
+                                frenzyTimer[pIdx] = 5.0f;
+                                isPowerup = true;
+                            }
+
+                            int finalPts = res.points;
+                            if (frenzyTimer[pIdx] > 0.0f) finalPts *= 2; // Doble de puntos en frenesí
+
                             bool isPerf = (res.rating == CutRating::PERFECT);
-                            scoreSys.addCut(pIdx, res.points, isPerf, e.getX(), e.getY());
+                            scoreSys.addCut(pIdx, finalPts, isPerf, e.getX(), e.getY());
                             cutsCount[pIdx]++;
                             if (isPerf) perfectsCount[pIdx]++;
                             maxCombo[pIdx] = std::max(maxCombo[pIdx], scoreSys.getCombo(pIdx));
@@ -545,16 +609,29 @@ int main(int argc, char* argv[]) {
                                 newRecordAchieved = true;
                             }
 
+                            if (isPowerup) {
+                                Mix_PlayChannel(-1, sfxPowerup, 0);
+                                activeTouch.triggerHaptic(0.8f, 0.8f, 250);
+                                triggerShake(15.0f, 0.22f);
+                            } else {
+                                // Racha Killstreak ascendente estilo Valorant según el combo actual
+                                int curCombo = scoreSys.getCombo(pIdx);
+                                if (curCombo >= 2) {
+                                    int noteIdx = std::clamp(curCombo - 2, 0, 7);
+                                    Mix_PlayChannel(-1, sfxKillstreak[noteIdx], 0);
+                                }
+                            }
+
                             if (isPerf) {
                                 hitStopTimer = 0.04f;
-                                slowMoTimer = 0.16f;
+                                if (freezeTimer <= 0.0f) slowMoTimer = 0.16f;
                                 triggerShake(16.0f, 0.18f);
-                                Mix_PlayChannel(-1, sfxPerfect, 0);
+                                if (!isPowerup && scoreSys.getCombo(pIdx) < 2) Mix_PlayChannel(-1, sfxPerfect, 0);
                                 activeTouch.triggerHaptic(0.5f, 0.8f, 180);
                                 activeTouch.setLED(34, 197, 94);
                             } else {
                                 triggerShake(9.0f, 0.12f);
-                                Mix_PlayChannel(-1, sfxSlice, 0);
+                                if (!isPowerup && scoreSys.getCombo(pIdx) < 2) Mix_PlayChannel(-1, sfxSlice, 0);
                                 activeTouch.triggerHaptic(0.3f, 0.4f, 100);
                                 activeTouch.setLED(250, 204, 21);
                             }
@@ -676,10 +753,12 @@ int main(int argc, char* argv[]) {
 
         // Estelas de katana + indicador del dedo en el touchpad
         gameRen.renderTrails(touchP1.getTrail(), CyberTheme::cP1Trail,
-                             touchP1.isFingerDown(), touchP1.getFingerX(), touchP1.getFingerY());
+                             touchP1.isFingerDown(), touchP1.getFingerX(), touchP1.getFingerY(),
+                             globalTime, frenzyTimer[0] > 0.0f, dualTimer[0] > 0.0f);
         if (isVersus || (state == GameState::MODE_SELECT && hasTwoDualshocks)) {
             gameRen.renderTrails(touchP2.getTrail(), CyberTheme::cP2Trail,
-                                 touchP2.isFingerDown(), touchP2.getFingerX(), touchP2.getFingerY());
+                                 touchP2.isFingerDown(), touchP2.getFingerX(), touchP2.getFingerY(),
+                                 globalTime, frenzyTimer[1] > 0.0f, dualTimer[1] > 0.0f);
         }
 
         gameRen.renderFloatingScores(scoreSys.getFloatingScores());
@@ -724,9 +803,12 @@ int main(int argc, char* argv[]) {
                     hd.combo[i] = scoreSys.getCombo(i);
                     hd.comboFrac[i] = scoreSys.getComboTimerFrac(i);
                     hd.scorePop[i] = scorePop[i];
+                    hd.dualTimer[i] = dualTimer[i];
+                    hd.frenzyTimer[i] = frenzyTimer[i];
                 }
                 hd.timeLeft = matchTimer;
                 hd.time = globalTime;
+                hd.freezeTimer = freezeTimer;
                 gameRen.renderHud1v1(hd);
             } else {
                 HudSoloData hd;
@@ -738,6 +820,9 @@ int main(int argc, char* argv[]) {
                 hd.scorePop = scorePop[0];
                 hd.lifeShake = lifeShake;
                 hd.time = globalTime;
+                hd.freezeTimer = freezeTimer;
+                hd.dualTimer = dualTimer[0];
+                hd.frenzyTimer = frenzyTimer[0];
                 gameRen.renderHudSolo(hd);
             }
 
@@ -769,6 +854,10 @@ int main(int argc, char* argv[]) {
     if (sfxExplode) Mix_FreeChunk(sfxExplode);
     if (sfxBeep) Mix_FreeChunk(sfxBeep);
     if (sfxGo) Mix_FreeChunk(sfxGo);
+    if (sfxPowerup) Mix_FreeChunk(sfxPowerup);
+    for (int k = 0; k < 8; ++k) {
+        if (sfxKillstreak[k]) Mix_FreeChunk(sfxKillstreak[k]);
+    }
 
     if (fontGiant) TTF_CloseFont(fontGiant);
     if (fontTitleBig) TTF_CloseFont(fontTitleBig);

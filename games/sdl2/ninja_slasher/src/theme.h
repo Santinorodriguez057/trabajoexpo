@@ -22,5 +22,7 @@ namespace CyberTheme {
     inline const SDL_Color cPurple      = {168, 85, 247, 255}; // Púrpura (Robots)
     inline const SDL_Color cSilver      = {203, 213, 225, 255};
     inline const SDL_Color cOrange      = {251, 146, 60, 255};
+    inline const SDL_Color cIceCyan     = {56, 189, 248, 255}; // Celeste hielo (Congelación)
+    inline const SDL_Color cNeonFlame   = {255, 94, 0, 255};   // Fuego naranja neón (Frenesí)
 }
 

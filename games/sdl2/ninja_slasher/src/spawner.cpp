@@ -55,18 +55,25 @@ void Spawner::spawnWave(std::vector<CyberEntity>& outEntities) {
         EntityType type = EntityType::ENERGY_CORE;
         float idealAngle = 0.0f;
 
-        if (roll < 45) {
+        if (roll < 40) {
             type = EntityType::ENERGY_CORE;
-        } else if (roll < 72) {
+        } else if (roll < 65) {
             type = EntityType::CYBER_DRONE;
             // Ángulo obligatorio aleatorio: 0°, 45°, 90°, 135°
             int angStep = std::rand() % 4;
             idealAngle = angStep * (3.14159265f / 4.0f);
-        } else if (roll < 88) {
+        } else if (roll < 80) {
             type = EntityType::EMP_MINE; // Peligro / mina
-        } else {
+        } else if (roll < 90) {
             type = EntityType::MECHA_SHURIKEN; // Bonus oro rápido
             vx *= 1.35f;
+        } else {
+            // Cápsula de Power-up (10% de probabilidad total)
+            int pRoll = std::rand() % 3;
+            if (pRoll == 0) type = EntityType::POWERUP_FREEZE;
+            else if (pRoll == 1) type = EntityType::POWERUP_DUAL;
+            else type = EntityType::POWERUP_FRENZY;
+            vx *= 0.85f; // Flotan un poco más pausadas para favorecer el corte
         }
 
         outEntities.emplace_back(type, spawnX, spawnY, vx, vy, idealAngle);

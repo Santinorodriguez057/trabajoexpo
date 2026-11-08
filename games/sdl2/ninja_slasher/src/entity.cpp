@@ -26,6 +26,13 @@ CyberEntity::CyberEntity(EntityType type, float x, float y, float vx, float vy, 
             rotSpeed_ = 1.2f;
             hasMandatoryAngle_ = false;
             break;
+        case EntityType::POWERUP_FREEZE:
+        case EntityType::POWERUP_DUAL:
+        case EntityType::POWERUP_FRENZY:
+            radius_ = 46.0f;
+            rotSpeed_ = 3.2f; // Rota llamativo
+            hasMandatoryAngle_ = false;
+            break;
     }
 }
 

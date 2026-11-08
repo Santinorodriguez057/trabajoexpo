@@ -52,9 +52,10 @@ public:
     static CollisionResult evaluateSlash(const SlashSegment& slash, const CyberEntity& entity) {
         CollisionResult res;
         float dist = 0.0f;
+        float effectiveRadius = entity.getRadius() + (slash.thickness * 0.5f);
 
         if (!checkSegmentCircle(slash.x1, slash.y1, slash.x2, slash.y2,
-                                entity.getX(), entity.getY(), entity.getRadius(), dist)) {
+                                entity.getX(), entity.getY(), effectiveRadius, dist)) {
             return res;
         }
 
@@ -66,6 +67,15 @@ public:
             res.isMine = true;
             res.points = -150;
             res.rating = CutRating::GRAZE;
+            return res;
+        }
+
+        // Si es una cápsula de power-up especial
+        if (entity.getType() == EntityType::POWERUP_FREEZE ||
+            entity.getType() == EntityType::POWERUP_DUAL ||
+            entity.getType() == EntityType::POWERUP_FRENZY) {
+            res.rating = CutRating::PERFECT;
+            res.points = 150;
             return res;
         }
 
