@@ -5,11 +5,43 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <limits>
+#include <cctype>
 
 using namespace ArcheryTheme;
 
 namespace {
+constexpr float kCalibrationRequiredSeconds = 1.5f;
+constexpr int kCalibrationBubbleRadius = 108;
+constexpr int kCalibrationBubbleTravel = kCalibrationBubbleRadius - 14;
+constexpr float kRecenterNoticeSeconds = 1.2f;
+constexpr bool DEBUG_CALIBRACION = true;
+constexpr float kFinalScreenIdleSeconds = 20.0f;
+constexpr int kSilverAwardScore = 1500;
+constexpr int kGoldAwardScore = 3000;
+constexpr const char* kRankingFile = "tiro_al_blanco_top5.txt";
+
+std::vector<ScoreEntry> readRankingFile() {
+    std::vector<ScoreEntry> entries;
+    std::ifstream file(kRankingFile);
+    ScoreEntry entry;
+    while (file >> entry.initials >> entry.score) {
+        if (entry.initials.size() == 3) entries.push_back(entry);
+    }
+    std::sort(entries.begin(), entries.end(), [](const ScoreEntry& a, const ScoreEntry& b) {
+        return a.score > b.score;
+    });
+    if (entries.size() > 5) entries.resize(5);
+    return entries;
+}
+
+void writeRankingFile(const std::vector<ScoreEntry>& entries) {
+    std::ofstream file(kRankingFile, std::ios::trunc);
+    for (size_t i = 0; file && i < entries.size() && i < 5; ++i)
+        file << entries[i].initials << ' ' << entries[i].score << '\n';
+}
+
 struct RoundDifficulty {
     float shotSpeed;
     int movement; // 0 fijo, 1 horizontal, 2 vertical, 3 combinado
@@ -21,7 +53,8 @@ struct RoundDifficulty {
     float goldLifetime;
 };
 
-// Tabla única para ajustar el ritmo y las mecánicas de las diez rondas.
+// Cinco rondas que distribuyen gradualmente los diez perfiles originales:
+// 1, 3, 5, 8 y 10. Así se mantiene el cierre difícil sin saltos bruscos.
 constexpr RoundDifficulty kRoundDifficulty[10] = {
     {225.0f, 0,   0.0f, 0.0f, 0.0f,   0,  0, 0.0f},
     {245.0f, 0,   0.0f, 0.0f, 0.0f,   0,  5, 0.0f},
@@ -34,6 +67,13 @@ constexpr RoundDifficulty kRoundDifficulty[10] = {
     {430.0f, 3,  66.0f, 2.1f, 2.2f,  18, 20, 2.4f},
     {465.0f, 3,  78.0f, 2.3f, 1.9f,  20, 22, 2.0f}
 };
+
+constexpr int kDifficultyProfileByRound[5] = {0, 2, 4, 7, 9};
+
+constexpr int difficultyProfileForRound(int roundNumber) {
+    const int safeRound = roundNumber < 1 ? 1 : (roundNumber > 5 ? 5 : roundNumber);
+    return kDifficultyProfileByRound[safeRound - 1];
+}
 }
 
 ArcheryGame::ArcheryGame(SDL_Renderer* ren, TTF_Font* fontLarge, TTF_Font* fontMed, TTF_Font* fontSmall, GameConfig& config)
@@ -52,9 +92,18 @@ int ArcheryGame::run() {
     if (EXTRA_ENABLE_SAVED_RECORD) {
         config_.load();
     }
+    loadRanking();
 
     startRound(1);
-    state_ = GameState::CALIBRATION;
+    controllerCalibrationMode_ = input_.hasController() && input_.hasGyro();
+    if (controllerCalibrationMode_) {
+        input_.beginCalibration();
+        calibrationProgress_ = calibrationCountdown_ = 0.0f;
+        calibrationElapsed_ = 0.0f;
+        state_ = GameState::CALIBRATION;
+    } else {
+        state_ = GameState::PLAYING; // Mouse/teclado: no pedir calibración de sensores.
+    }
 
     Uint32 lastTime = SDL_GetTicks();
 
@@ -82,6 +131,7 @@ void ArcheryGame::startRound(int roundNumber) {
     hudEntryTimer_ = 0.55f;
     shotsRemaining_ = kShotsPerRound;
     roundScore_ = 0;
+    roundHits_ = roundErrors_ = roundBadTargetsHit_ = roundMaxCombo_ = roundTimeBonus_ = 0;
     targetsDownThisRound_ = 0;
     comboHits_ = 0;
     targetImpacts_.clear();
@@ -94,8 +144,9 @@ void ArcheryGame::startRound(int roundNumber) {
         targetFallen_[i] = false;
     }
 
-    // Distancia progresiva de la diana
-    float baseDist = 14.0f + (roundNumber - 1) * 2.0f;
+    const int difficultyIndex = difficultyProfileForRound(roundNumber);
+    const int difficultyRound = difficultyIndex + 1;
+    float baseDist = 14.0f + (difficultyRound - 1) * 2.0f;
     float distVariation = ((rand() % 100) / 100.0f - 0.5f) * 2.0f;
     targetDistance_ = std::clamp(baseDist + distVariation, 12.0f, 34.0f);
 
@@ -118,7 +169,7 @@ void ArcheryGame::startRound(int roundNumber) {
         targetBaseOffsetY_[i] = heights[formation][i] + static_cast<float>(rand() % 13 - 6);
         targetScreenOffsetX_[i] = targetBaseOffsetX_[i];
         targetScreenOffsetY_[i] = targetBaseOffsetY_[i];
-        const RoundDifficulty& difficulty = kRoundDifficulty[roundNumber - 1];
+        const RoundDifficulty& difficulty = kRoundDifficulty[difficultyIndex];
         const int roll = rand() % 100;
         targetKind_[i] = roll < difficulty.badChance ? 1 : (roll < difficulty.badChance + difficulty.goldChance ? 2 : 0);
         targetVisible_[i] = true;
@@ -141,13 +192,23 @@ void ArcheryGame::restartMatch() {
     totalScore_ = 0;
     totalHits_ = 0;
     totalBullseyes_ = 0;
+    totalGoldenTargetsHit_ = 0;
     bestShotPoints_ = 0;
     isNewRecord_ = false;
+    finalScreenIdleTimer_ = 0.0f;
+    initialsEntry_.clear();
     floatingTexts_.clear();
     confetti_.clear();
     input_.recenterAim();
     startRound(1);
-    state_ = GameState::PLAYING;
+    calibrationProgress_ = calibrationCountdown_ = 0.0f;
+    calibrationElapsed_ = 0.0f;
+    if (controllerCalibrationMode_ && input_.hasController() && input_.hasGyro()) {
+        input_.beginCalibration();
+        state_ = GameState::CALIBRATION;
+    } else {
+        state_ = GameState::PLAYING;
+    }
 }
 
 void ArcheryGame::handleEvents() {
@@ -160,7 +221,41 @@ void ArcheryGame::handleEvents() {
             return;
         }
 
+        const bool hadController = input_.hasController();
         input_.handleEvent(ev);
+        if (state_ == GameState::MATCH_OVER || state_ == GameState::INITIALS_ENTRY || state_ == GameState::RANKING)
+            finalScreenIdleTimer_ = 0.0f;
+        if (state_ == GameState::INITIALS_ENTRY && ev.type == SDL_KEYDOWN && !ev.key.repeat) {
+            const SDL_Keycode key = ev.key.keysym.sym;
+            if (key >= SDLK_a && key <= SDLK_z && initialsEntry_.size() < 3) {
+                initialsEntry_.push_back(static_cast<char>('A' + (key - SDLK_a)));
+                if (initialsEntry_.size() == 3) submitRankingEntry();
+            } else if (key == SDLK_BACKSPACE && !initialsEntry_.empty()) {
+                initialsEntry_.pop_back();
+            } else if (key == SDLK_LEFT || key == SDLK_RIGHT) {
+                initialsCursor_ = static_cast<char>('A' + ((initialsCursor_ - 'A' + (key == SDLK_RIGHT ? 1 : 25)) % 26));
+            }
+        } else if (state_ == GameState::INITIALS_ENTRY && ev.type == SDL_CONTROLLERBUTTONDOWN &&
+                   (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT || ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) {
+            initialsCursor_ = static_cast<char>('A' + ((initialsCursor_ - 'A' +
+                (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT ? 1 : 25)) % 26));
+        }
+        if (ev.type == SDL_CONTROLLERDEVICEREMOVED && hadController && controllerCalibrationMode_ && !input_.hasController()) {
+            state_ = GameState::CONTROLLER_DISCONNECTED;
+            calibrationProgress_ = calibrationCountdown_ = 0.0f;
+            calibrationElapsed_ = 0.0f;
+        } else if (ev.type == SDL_CONTROLLERDEVICEADDED &&
+                   state_ == GameState::CONTROLLER_DISCONNECTED && input_.hasController()) {
+            controllerCalibrationMode_ = input_.hasGyro();
+            calibrationProgress_ = calibrationCountdown_ = 0.0f;
+            calibrationElapsed_ = 0.0f;
+            if (controllerCalibrationMode_) {
+                input_.beginCalibration();
+                state_ = GameState::CALIBRATION;
+            } else {
+                state_ = GameState::PLAYING;
+            }
+        }
 
         // Control específico de navegación en el Menú de Ajustes (Paso 3)
         if (state_ == GameState::PAUSE_MENU) {
@@ -251,6 +346,12 @@ void ArcheryGame::handleEvents() {
 void ArcheryGame::update(float dt) {
     input_.update(dt);
     const AimState& aim = input_.getState();
+    recenterNoticeTimer_ = std::max(0.0f, recenterNoticeTimer_ - dt);
+    if (state_ == GameState::PLAYING && input_.takeRecenterRequest()) {
+        input_.recenterAim();
+        recenterNoticeTimer_ = kRecenterNoticeSeconds;
+        weaponSwayX_ = 0.0f;
+    }
     const float swaySmooth = 1.0f - std::exp(-dt * 7.0f);
     const float idleSway = std::sin(roundTime_ * 1.7f) * 3.0f;
     weaponSwayX_ += (aim.x * 30.0f + idleSway - weaponSwayX_) * swaySmooth;
@@ -264,7 +365,7 @@ void ArcheryGame::update(float dt) {
     activeBullet_.impactFlash = std::max(0.0f, activeBullet_.impactFlash - dt);
 
     // Caída con gravedad y rebote amortiguado de los blancos derribados.
-    const RoundDifficulty& difficulty = kRoundDifficulty[std::clamp(currentRound_ - 1, 0, 9)];
+    const RoundDifficulty& difficulty = kRoundDifficulty[difficultyProfileForRound(currentRound_)];
     for (int i = 0; i < kTargetCount; ++i) {
         if (!targetFallen_[i]) {
             const float phase = roundTime_ * difficulty.moveRate + i * 1.37f;
@@ -318,13 +419,45 @@ void ArcheryGame::update(float dt) {
         else ++it;
     }
 
+    if (state_ == GameState::MATCH_OVER || state_ == GameState::INITIALS_ENTRY || state_ == GameState::RANKING) {
+        finalScreenIdleTimer_ += dt;
+        if (finalScreenIdleTimer_ >= kFinalScreenIdleSeconds) {
+            restartMatch();
+            return;
+        }
+    }
+
     // 2. Máquina de Estados del Juego
     switch (state_) {
         case GameState::CALIBRATION:
-            if (input_.confirmPressed()) {
-                input_.calibrate();
+            if (!controllerCalibrationMode_ || !input_.hasController()) {
                 state_ = GameState::PLAYING;
+                break;
             }
+            calibrationElapsed_ += dt;
+            if (calibrationElapsed_ >= CalibrationTuning::kMaxCalibrationWaitSeconds && input_.confirmPressed()) {
+                input_.beginCalibration();
+                input_.completeCalibration();
+                state_ = GameState::PLAYING;
+                input_.setLED(20, 180, 220);
+                break;
+            }
+            if (input_.getCalibrationTelemetry().postureValid) {
+                calibrationProgress_ = std::min(kCalibrationRequiredSeconds, calibrationProgress_ + dt);
+                input_.accumulateCalibrationSample();
+                if (calibrationProgress_ >= kCalibrationRequiredSeconds) {
+                    input_.completeCalibration();
+                    calibrationProgress_ = kCalibrationRequiredSeconds;
+                    state_ = GameState::PLAYING;
+                    input_.setLED(20, 180, 220);
+                }
+            } else {
+                calibrationProgress_ = std::max(0.0f, calibrationProgress_ -
+                    dt * CalibrationTuning::kInvalidProgressDecayRatio);
+            }
+            break;
+
+        case GameState::CONTROLLER_DISCONNECTED:
             break;
 
         case GameState::PLAYING:
@@ -398,6 +531,7 @@ void ArcheryGame::update(float dt) {
                         }
                         const float roundTimeLimit = std::max(30.0f, 60.0f - currentRound_ * 2.5f);
                         const int timeBonus = std::max(0, static_cast<int>((roundTimeLimit - roundTime_) * 4.0f));
+                        roundTimeBonus_ = timeBonus;
                         if (timeBonus > 0) {
                             totalScore_ += timeBonus;
                             roundScore_ += timeBonus;
@@ -417,6 +551,7 @@ void ArcheryGame::update(float dt) {
                         state_ = GameState::ROUND_SUMMARY;
                     } else {
                         state_ = GameState::MATCH_OVER;
+                        finalScreenIdleTimer_ = 0.0f;
                         if (EXTRA_ENABLE_SAVED_RECORD && totalScore_ > config_.highRecord) {
                             isNewRecord_ = true;
                             config_.highRecord = totalScore_;
@@ -449,14 +584,27 @@ void ArcheryGame::update(float dt) {
 
         case GameState::MATCH_OVER:
             if (input_.confirmPressed()) {
-                input_.recenterAim();
-                totalScore_ = 0;
-                totalHits_ = 0;
-                totalBullseyes_ = 0;
-                bestShotPoints_ = 0;
-                isNewRecord_ = false;
-                startRound(1);
-                state_ = GameState::PLAYING;
+                initialsEntry_.clear();
+                initialsCursor_ = 'A';
+                finalScreenIdleTimer_ = 0.0f;
+                state_ = GameState::INITIALS_ENTRY;
+            } else if (input_.cancelPressed() || input_.pausePressed()) {
+                running_ = false;
+            }
+            break;
+
+        case GameState::INITIALS_ENTRY:
+            if (input_.confirmPressed() && initialsEntry_.size() < 3) {
+                initialsEntry_.push_back(initialsCursor_);
+                if (initialsEntry_.size() == 3) submitRankingEntry();
+            } else if (input_.cancelPressed() || input_.pausePressed()) {
+                running_ = false;
+            }
+            break;
+
+        case GameState::RANKING:
+            if (input_.confirmPressed()) {
+                restartMatch();
             } else if (input_.cancelPressed() || input_.pausePressed()) {
                 running_ = false;
             }
@@ -542,8 +690,12 @@ void ArcheryGame::evaluateImpact(float hitX, float hitY) {
         const bool badTarget = targetKind_[hitTargetIndex] == 1;
         if (!badTarget) {
             totalHits_++;
+            roundHits_++;
             ++comboHits_;
+            roundMaxCombo_ = std::max(roundMaxCombo_, comboHits_);
+            if (targetKind_[hitTargetIndex] == 2) ++totalGoldenTargetsHit_;
         } else {
+            roundBadTargetsHit_++;
             comboHits_ = 0;
         }
 
@@ -630,6 +782,7 @@ void ArcheryGame::evaluateImpact(float hitX, float hitY) {
             floatingTexts_.push_back({label, static_cast<float>(screenHit.x), static_cast<float>(screenHit.y - 70), 2.2f, 2.2f, color, 1.2f});
         }
     } else {
+        roundErrors_++;
         comboHits_ = 0;
         audio_.playError();
         if (EXTRA_ENABLE_RUMBLE) input_.setRumble(0.2f, 0.2f, 80);
@@ -852,6 +1005,18 @@ void ArcheryGame::render() {
     }
     renderHUD();
 
+    if (state_ == GameState::PLAYING && recenterNoticeTimer_ > 0.0f) {
+        drawBrutalistBox(ren_, 660, 390, 600, 92, false, COLOR_CARD_BG, COLOR_ACCENT_GREEN, 8);
+        drawText(fontMed_, "RECENTRANDO...", 960, 436, COLOR_ACCENT_GREEN, true);
+    } else if (state_ == GameState::PLAYING && input_.getRecenterHoldProgress() > 0.0f) {
+        const int width = static_cast<int>(std::clamp(input_.getRecenterHoldProgress(), 0.0f, 1.0f) * 600.0f);
+        drawBrutalistBox(ren_, 660, 390, 600, 92, false, COLOR_CARD_BG, COLOR_ACCENT_GOLD, 8);
+        drawText(fontSmall_, "MANTENE PARA RECENTRAR", 960, 418, COLOR_TEXT_MAIN, true);
+        SDL_SetRenderDrawColor(ren_, COLOR_ACCENT_GOLD.r, COLOR_ACCENT_GOLD.g, COLOR_ACCENT_GOLD.b, 255);
+        SDL_Rect holdBar{660, 477, width, 5};
+        SDL_RenderFillRect(ren_, &holdBar);
+    }
+
     if (roundBannerTimer_ > 0.0f && state_ == GameState::PLAYING) {
         const float elapsed = 1.8f - roundBannerTimer_;
         float y = 174.0f;
@@ -880,8 +1045,11 @@ void ArcheryGame::render() {
     }
 
     if (state_ == GameState::CALIBRATION) renderCalibrationScreen();
+    else if (state_ == GameState::CONTROLLER_DISCONNECTED) renderControllerReconnectScreen();
     else if (state_ == GameState::ROUND_SUMMARY) renderRoundSummary();
     else if (state_ == GameState::MATCH_OVER) renderMatchOver();
+    else if (state_ == GameState::INITIALS_ENTRY) renderInitialsEntry();
+    else if (state_ == GameState::RANKING) renderRanking();
     else if (state_ == GameState::PAUSE_MENU) renderPauseMenu();
 
     if (!confetti_.empty()) {
@@ -1116,7 +1284,7 @@ void ArcheryGame::renderFairTargets() {
             ? std::sin(roundTime_ * 42.0f + i) * (14.0f - targetFallAngle_[i]) * 0.45f : 0.0f;
         center.x += static_cast<int>(hitWobble);
         SDL_Color canColor = palettes[(currentRound_ - 1) % 4][i];
-        if (targetKind_[i] == 1) canColor = COLOR_ACCENT_RED;
+        if (targetKind_[i] == 1) canColor = {52, 57, 63, 255};
         else if (targetKind_[i] == 2) canColor = COLOR_ACCENT_GOLD;
         const int radiusPx = std::max(49, static_cast<int>((targetRadius_ / targetDistance_) * fov));
         const int bodyW = radiusPx + 28 + ((currentRound_ + i) % 3) * 8;
@@ -1171,8 +1339,17 @@ void ArcheryGame::renderFairTargets() {
             drawFlat(fallenX + 7, fallenY + 7, static_cast<float>(bodyW), static_cast<float>(bodyH), angle, COLOR_BORDER);
             drawFlat(fallenX, fallenY, static_cast<float>(bodyW), static_cast<float>(bodyH), angle, canColor);
             drawFlat(fallenX - 4, fallenY - 2, static_cast<float>(bodyW / 6), static_cast<float>(bodyH - 14), angle, {255, 255, 248, 210});
-            drawFlat(fallenX, fallenY - static_cast<float>(bodyH) * 0.42f, static_cast<float>(bodyW * 0.88f), 8.0f, angle, {195, 203, 208, 255});
-            drawFlat(fallenX, fallenY + static_cast<float>(bodyH) * 0.42f, static_cast<float>(bodyW * 0.88f), 8.0f, angle, {195, 203, 208, 255});
+            // Los extremos se posicionan en el eje local de la lata y luego
+            // giran con ella; desplazarlos solo en Y los separaba del cuerpo.
+            const float angleRad = angle * 3.14159265f / 180.0f;
+            const float capOffset = static_cast<float>(bodyH) * 0.5f - 5.0f;
+            for (const float end : {-1.0f, 1.0f}) {
+                const float localY = end * capOffset;
+                const float capX = fallenX - std::sin(angleRad) * localY;
+                const float capY = fallenY + std::cos(angleRad) * localY;
+                drawFlat(capX + 3, capY + 3, static_cast<float>(bodyW * 0.90f), 14.0f, angle, COLOR_BORDER);
+                drawFlat(capX, capY, static_cast<float>(bodyW * 0.88f), 11.0f, angle, {195, 203, 208, 255});
+            }
             drawFlat(fallenX, fallenY, static_cast<float>(bodyW * 0.70f), 10.0f, angle, COLOR_BORDER);
             drawFlat(fallenX, fallenY, static_cast<float>(bodyW * 0.55f), 5.0f, angle,
                      targetKind_[i] == 2 ? COLOR_ACCENT_GOLD : COLOR_CARD_BG);
@@ -1227,9 +1404,11 @@ void ArcheryGame::renderFairTargets() {
 
         // Cuatro diseños de lata rotativos: diana, estrella, franjas y premio.
         if (targetKind_[i] == 1) {
-            drawFlat(center.x, center.y, static_cast<float>(bodyW - 22), 10.0f, 45.0f, COLOR_CARD_BG);
-            drawFlat(center.x, center.y, static_cast<float>(bodyW - 22), 10.0f, -45.0f, COLOR_CARD_BG);
-            drawCircleOutline(center.x, center.y, radiusPx / 2, COLOR_BORDER);
+            const SDL_Color xShadow{12, 14, 17, 255};
+            drawFlat(center.x + 2, center.y + 2, static_cast<float>(bodyW - 16), 18.0f, 45.0f, xShadow);
+            drawFlat(center.x + 2, center.y + 2, static_cast<float>(bodyW - 16), 18.0f, -45.0f, xShadow);
+            drawFlat(center.x, center.y, static_cast<float>(bodyW - 16), 15.0f, 45.0f, COLOR_ACCENT_RED);
+            drawFlat(center.x, center.y, static_cast<float>(bodyW - 16), 15.0f, -45.0f, COLOR_ACCENT_RED);
         } else if (targetKind_[i] == 2) {
             drawCircleFilled(center.x, center.y, radiusPx * 3 / 4, COLOR_ACCENT_GOLD);
             drawCircleOutline(center.x, center.y, radiusPx * 3 / 4, COLOR_BORDER);
@@ -1259,9 +1438,11 @@ void ArcheryGame::renderFairTargets() {
         drawFlat(center.x, center.y + radiusPx + 12, static_cast<float>(bodyW - 20), 8.0f, 0.0f, COLOR_BORDER);
         drawFlat(center.x, center.y + radiusPx + 12, static_cast<float>(bodyW - 24), 4.0f, 0.0f, sealColor);
         // Número dentro del panel frontal, lejos del borde de recorte.
-        const int numberY = body.y + std::max(24, body.h / 5);
-        drawBrutalistBox(ren_, center.x - 24, numberY - 14, 48, 28, false, COLOR_CARD_BG, canColor, 4);
-        drawText(fontMed_, std::to_string(i + 1), center.x, numberY, COLOR_TEXT_MAIN, true);
+        if (targetKind_[i] != 1) {
+            const int numberY = body.y + std::max(24, body.h / 5);
+            drawBrutalistBox(ren_, center.x - 24, numberY - 14, 48, 28, false, COLOR_CARD_BG, canColor, 4);
+            drawText(fontMed_, std::to_string(i + 1), center.x, numberY, COLOR_TEXT_MAIN, true);
+        }
 
         for (const auto& hit : targetImpacts_) {
             if (hit.targetIndex != i) continue;
@@ -1666,36 +1847,106 @@ void ArcheryGame::renderPauseMenu() {
 }
 
 void ArcheryGame::renderCalibrationScreen() {
-    int cardW = 1000;
-    int cardH = 580;
-    int cardX = 960 - cardW / 2;
-    int cardY = 540 - cardH / 2;
+    SDL_SetRenderDrawColor(ren_, COLOR_BG.r, COLOR_BG.g, COLOR_BG.b, 255);
+    SDL_Rect backdrop{0, 0, 1920, 1080};
+    SDL_RenderFillRect(ren_, &backdrop);
 
+    const int cardW = 1120;
+    const int cardH = 850;
+    const int cardX = 960 - cardW / 2;
+    const int cardY = 540 - cardH / 2;
     drawBrutalistBox(ren_, cardX, cardY, cardW, cardH, false, COLOR_CARD_BG, COLOR_ACCENT_GOLD, 16);
+    drawText(fontLarge_, "CALIBRACION DEL CONTROL", 960, cardY + 58, COLOR_TEXT_MAIN, true);
+    drawText(fontMed_, "Agarrá el control como siempre, cómodo, y mantenelo quieto", 960, cardY + 132, COLOR_TEXT_MAIN, true);
 
-    drawText(fontLarge_, "CALIBRAR MIRA DE TIRO", 960, cardY + 60, COLOR_TEXT_MAIN, true);
+    const CalibrationTelemetry& telemetry = input_.getCalibrationTelemetry();
+    const int cx = 960;
+    const int cy = 535;
+    drawCircleFilled(cx, cy, kCalibrationBubbleRadius, {235, 239, 242, 255});
+    for (int thickness = 0; thickness < 5; ++thickness)
+        drawCircleOutline(cx, cy, kCalibrationBubbleRadius + thickness, COLOR_BORDER);
+    drawCircleOutline(cx, cy, kCalibrationBubbleRadius * 2 / 3, {135, 145, 155, 255});
+    drawCircleOutline(cx, cy, kCalibrationBubbleRadius / 3, {135, 145, 155, 255});
+    SDL_SetRenderDrawColor(ren_, 120, 128, 136, 255);
+    SDL_RenderDrawLine(ren_, cx - 12, cy, cx + 12, cy);
+    SDL_RenderDrawLine(ren_, cx, cy - 12, cx, cy + 12);
 
-    drawText(fontMed_, "Sostén el mando en una posición cómoda para ti.", 960, cardY + 160, COLOR_TEXT_MAIN, true);
-    drawText(fontSmall_, "Al confirmar, esa postura será el centro de la mira.", 960, cardY + 210, COLOR_TEXT_MUTED, true);
+    float bubbleX = std::clamp(telemetry.rollDegrees / CalibrationTuning::kMaxRollDegrees, -1.0f, 1.0f) * kCalibrationBubbleTravel;
+    const float comfortablePitchRange = CalibrationTuning::kComfortPitchMaxDegrees;
+    float bubbleY = std::clamp(telemetry.pitchDegrees / comfortablePitchRange, -1.0f, 1.0f) * kCalibrationBubbleTravel;
+    const float bubbleLength = std::sqrt(bubbleX * bubbleX + bubbleY * bubbleY);
+    if (bubbleLength > kCalibrationBubbleTravel) {
+        bubbleX *= kCalibrationBubbleTravel / bubbleLength;
+        bubbleY *= kCalibrationBubbleTravel / bubbleLength;
+    }
+    const SDL_Color bubbleColor = telemetry.postureValid ? COLOR_ACCENT_GREEN : COLOR_ACCENT_RED;
+    drawCircleFilled(cx + static_cast<int>(bubbleX), cy + static_cast<int>(bubbleY), 20, COLOR_BORDER);
+    drawCircleFilled(cx + static_cast<int>(bubbleX), cy + static_cast<int>(bubbleY), 14, bubbleColor);
 
-    // Cuadro de controles
-    int boxW = 820;
-    int boxH = 180;
-    int boxX = 960 - boxW / 2;
-    int boxY = cardY + 260;
-    drawBrutalistBox(ren_, boxX, boxY, boxW, boxH, false, COLOR_CARD_MUTED, {0,0,0,0}, 6);
+    const float stillness = telemetry.hasGyro ? telemetry.quietness : 0.0f;
+    drawText(fontMed_, "QUIETUD", 760, 710, COLOR_TEXT_MAIN, true);
+    const SDL_Rect barShadow{840, 692, 250, 34};
+    const SDL_Rect barFrame{832, 684, 250, 34};
+    SDL_SetRenderDrawColor(ren_, COLOR_SHADOW.r, COLOR_SHADOW.g, COLOR_SHADOW.b, 255);
+    SDL_RenderFillRect(ren_, &barShadow);
+    SDL_SetRenderDrawColor(ren_, COLOR_BORDER.r, COLOR_BORDER.g, COLOR_BORDER.b, 255);
+    SDL_RenderFillRect(ren_, &barFrame);
+    if (stillness > 0.0f) {
+        SDL_Rect barFill{barFrame.x + 4, barFrame.y + 4, static_cast<int>((barFrame.w - 8) * stillness), barFrame.h - 8};
+        SDL_SetRenderDrawColor(ren_, stillness > 0.75f ? COLOR_ACCENT_GREEN.r : COLOR_ACCENT_GOLD.r,
+                               stillness > 0.75f ? COLOR_ACCENT_GREEN.g : COLOR_ACCENT_GOLD.g,
+                               stillness > 0.75f ? COLOR_ACCENT_GREEN.b : COLOR_ACCENT_GOLD.b, 255);
+        SDL_RenderFillRect(ren_, &barFill);
+    }
+    drawText(fontSmall_, std::to_string(static_cast<int>(stillness * 100.0f)) + "%", 1115, 701, COLOR_TEXT_MAIN, true);
 
-    drawText(fontSmall_, "Orientacion DualShock: apunta a las latas", 960, boxY + 35, COLOR_TEXT_MAIN, true);
-    drawText(fontSmall_, "Pulsa R2 o clic izquierdo para disparar", 960, boxY + 75, COLOR_TEXT_MAIN, true);
-    drawText(fontSmall_, "Cinco disparos por ronda. Apunta al centro", 960, boxY + 115, COLOR_TEXT_MAIN, true);
-    drawText(fontSmall_, "Tecla C: centrar desde tu postura actual", 960, boxY + 150, COLOR_ACCENT_RED, true);
+    const int ringRadius = kCalibrationBubbleRadius + 23;
+    const int segments = 72;
+    const int litSegments = static_cast<int>((calibrationProgress_ / kCalibrationRequiredSeconds) * segments);
+    SDL_SetRenderDrawColor(ren_, 15, 15, 15, 255);
+    for (int n = 0; n < litSegments; ++n) {
+        const float a0 = (-90.0f + n * 360.0f / segments) * 0.0174532925f;
+        const float a1 = (-90.0f + (n + 1) * 360.0f / segments) * 0.0174532925f;
+        SDL_RenderDrawLine(ren_, cx + static_cast<int>(std::cos(a0) * ringRadius),
+                           cy + static_cast<int>(std::sin(a0) * ringRadius),
+                           cx + static_cast<int>(std::cos(a1) * ringRadius),
+                           cy + static_cast<int>(std::sin(a1) * ringRadius));
+    }
+    const int percent = static_cast<int>(std::round(100.0f * calibrationProgress_ / kCalibrationRequiredSeconds));
+    drawText(fontMed_, "MANTENE LA POSTURA  " + std::to_string(percent) + "%", 960, 775,
+             telemetry.postureValid ? COLOR_ACCENT_GREEN : COLOR_TEXT_MUTED, true);
+    if (DEBUG_CALIBRACION) {
+        char values[320];
+        std::snprintf(values, sizeof(values),
+                      "ACC X/Y/Z: %.2f %.2f %.2f   GYRO X/Y/Z: %.3f %.3f %.3f   QUIETUD: %.1f%%",
+                      telemetry.rawAccel[0], telemetry.rawAccel[1], telemetry.rawAccel[2],
+                      telemetry.rawGyro[0], telemetry.rawGyro[1], telemetry.rawGyro[2],
+                      telemetry.quietness * 100.0f);
+        drawText(fontSmall_, values, 960, 830, {115, 115, 115, 255}, true);
 
-    drawText(fontLarge_, "PRESIONA [X] O [ENTER] PARA COMENZAR", 960, cardY + cardH - 50, COLOR_ACCENT_GREEN, true);
+        const std::string quietStatus = telemetry.postureValid ? "QUIETUD: OK" : "FALLA: QUIETUD";
+        drawText(fontSmall_, quietStatus, 960, 856, {115, 115, 115, 255}, true);
+    }
+    if (calibrationElapsed_ >= CalibrationTuning::kMaxCalibrationWaitSeconds) {
+        drawText(fontMed_, "Presioná X para continuar", 960, 888, COLOR_ACCENT_RED, true);
+    }
+    drawText(fontSmall_, "La mira se centrara con esta postura. Mantené Y / TRIANGULO 1 segundo para recentrar.",
+             960, cardY + cardH - 47, COLOR_TEXT_MUTED, true);
+}
+
+void ArcheryGame::renderControllerReconnectScreen() {
+    SDL_SetRenderDrawColor(ren_, COLOR_BG.r, COLOR_BG.g, COLOR_BG.b, 255);
+    SDL_Rect backdrop{0, 0, 1920, 1080};
+    SDL_RenderFillRect(ren_, &backdrop);
+    drawBrutalistBox(ren_, 410, 300, 1100, 480, false, COLOR_CARD_BG, COLOR_ACCENT_RED, 16);
+    drawText(fontLarge_, "RECONECTA EL CONTROL", 960, 420, COLOR_TEXT_MAIN, true);
+    drawText(fontMed_, "Reconectá el control para continuar", 960, 525, COLOR_ACCENT_RED, true);
+    drawText(fontSmall_, "Cuando vuelva a conectarse, calibraremos la postura otra vez.", 960, 610, COLOR_TEXT_MUTED, true);
 }
 
 void ArcheryGame::renderRoundSummary() {
     int cardW = 900;
-    int cardH = 500;
+    int cardH = 550;
     int cardX = 960 - cardW / 2;
     int cardY = 540 - cardH / 2;
 
@@ -1710,52 +1961,115 @@ void ArcheryGame::renderRoundSummary() {
     std::string totalPts = "Puntuación acumulada: " + std::to_string(totalScore_) + " PUNTOS";
     drawText(fontMed_, totalPts, 960, cardY + 225, COLOR_TEXT_MAIN, true);
 
-    std::string nextDist = "Próximo puesto: nivel " + std::to_string(currentRound_ + 1);
-    drawText(fontSmall_, nextDist, 960, cardY + 290, COLOR_ACCENT_GOLD, true);
+    drawText(fontSmall_, "Próxima ronda: " + std::to_string(currentRound_ + 1), 960, cardY + 285, COLOR_TEXT_MAIN, true);
 
-    drawText(fontMed_, "Presiona [X / ENTER] para Siguiente Ronda", 960, cardY + 390, COLOR_ACCENT_GREEN, true);
-    drawText(fontSmall_, "[O / ESC] Volver al Menú Principal", 960, cardY + 445, COLOR_TEXT_MUTED, true);
+    drawText(fontSmall_, "Aciertos: " + std::to_string(roundHits_) +
+             "     Errores: " + std::to_string(roundErrors_) +
+             "     X golpeadas: " + std::to_string(roundBadTargetsHit_), 960, cardY + 345, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, "Combo máximo: x" + std::to_string(roundMaxCombo_) +
+             "     Bonus de tiempo: +" + std::to_string(roundTimeBonus_), 960, cardY + 380, COLOR_TEXT_MAIN, true);
+
+    drawText(fontMed_, "Presioná [X / ENTER] para continuar", 960, cardY + 455, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, "[O / ESC] Volver al Menú", 960, cardY + 510, COLOR_TEXT_MUTED, true);
 }
 
 // =========================================================================
-// PASO 5: PANTALLA DE RESUMEN TRAS LAS 10 RONDAS
+// Resultados de la partida y tabla local de mejores puntajes.
 // =========================================================================
 void ArcheryGame::renderMatchOver() {
-    int cardW = 980;
-    int cardH = 640;
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(ren_, 8, 12, 20, 165);
+    SDL_Rect dim{0, 0, 1920, 1080};
+    SDL_RenderFillRect(ren_, &dim);
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
+
+    int cardW = 1120;
+    int cardH = 720;
     int cardX = 960 - cardW / 2;
     int cardY = 540 - cardH / 2;
 
     drawBrutalistBox(ren_, cardX, cardY, cardW, cardH, false, COLOR_CARD_BG, isNewRecord_ ? COLOR_ACCENT_RED : COLOR_ACCENT_GOLD, 16);
 
-    drawText(fontLarge_, "¡PARTIDA COMPLETADA!", 960, cardY + 55, COLOR_TEXT_MAIN, true);
+    drawText(fontLarge_, "¡PARTIDA COMPLETADA!", 960, cardY + 58, COLOR_TEXT_MAIN, true);
 
     if (isNewRecord_) {
-        drawText(fontLarge_, "★ ¡NUEVO RÉCORD HISTÓRICO! ★", 960, cardY + 120, COLOR_ACCENT_RED, true);
+        drawText(fontMed_, "¡NUEVO RÉCORD!", 960, cardY + 120, COLOR_ACCENT_RED, true);
     } else {
         std::string recTxt = "RÉCORD HISTÓRICO: " + std::to_string(config_.highRecord) + " PUNTOS";
-        drawText(fontSmall_, recTxt, 960, cardY + 120, COLOR_TEXT_MUTED, true);
+        drawText(fontSmall_, recTxt, 960, cardY + 120, COLOR_TEXT_MAIN, true);
     }
 
-    // Puntuación Final Destacada
-    int scoreTagW = 600;
-    int scoreTagH = 70;
-    drawBrutalistBox(ren_, 960 - scoreTagW / 2, cardY + 165, scoreTagW, scoreTagH, false, COLOR_CARD_MUTED, COLOR_ACCENT_GREEN, 6);
+    const SDL_Color medalColor = totalScore_ >= kGoldAwardScore ? COLOR_ACCENT_GOLD :
+        (totalScore_ >= kSilverAwardScore ? SDL_Color{170, 180, 190, 255} : SDL_Color{177, 111, 68, 255});
+    const std::string medalName = totalScore_ >= kGoldAwardScore ? "ORO" :
+        (totalScore_ >= kSilverAwardScore ? "PLATA" : "BRONCE");
+    drawBrutalistBox(ren_, 660, cardY + 158, 600, 68, false, COLOR_CARD_MUTED, medalColor, 6);
     std::string finalPts = "PUNTUACIÓN FINAL: " + std::to_string(totalScore_);
-    drawText(fontLarge_, finalPts, 960, cardY + 200, COLOR_TEXT_MAIN, true);
+    drawText(fontMed_, finalPts, 960, cardY + 192, COLOR_TEXT_MAIN, true);
+    drawText(fontMed_, "PREMIO: " + medalName, 960, cardY + 270, COLOR_TEXT_MAIN, true);
 
     int totalShots = kTotalRounds * kShotsPerRound;
     float accuracy = totalShots > 0 ? (static_cast<float>(totalHits_) / totalShots) * 100.0f : 0.0f;
     std::string accStr = "Precisión: " + std::to_string(static_cast<int>(accuracy)) + "% (" +
                          std::to_string(totalHits_) + " / " + std::to_string(totalShots) + " objetivos acertados)";
-    drawText(fontMed_, accStr, 960, cardY + 295, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, accStr, 960, cardY + 338, COLOR_TEXT_MAIN, true);
 
-    std::string bullseyeStr = "Premios mayores: " + std::to_string(totalBullseyes_);
-    drawText(fontMed_, bullseyeStr, 960, cardY + 360, COLOR_ACCENT_GOLD, true);
+    drawText(fontMed_, "Latas doradas: " + std::to_string(totalGoldenTargetsHit_), 960, cardY + 395, COLOR_TEXT_MAIN, true);
 
     std::string bestShotStr = "Mejor disparo: +" + std::to_string(bestShotPoints_) + " PTS";
-    drawText(fontMed_, bestShotStr, 960, cardY + 420, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, bestShotStr, 960, cardY + 440, COLOR_TEXT_MAIN, true);
 
-    drawText(fontMed_, "Presiona [X / ENTER] para Jugar de Nuevo", 960, cardY + 520, COLOR_ACCENT_GREEN, true);
-    drawText(fontSmall_, "Presiona [O / ESC] para Salir al Menú Principal", 960, cardY + 575, COLOR_TEXT_MUTED, true);
+    drawText(fontMed_, "[X / ENTER] Ver ranking y guardar iniciales", 960, cardY + 535, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, "[O / ESC] Salir al Menú", 960, cardY + 600, COLOR_TEXT_MUTED, true);
+    drawText(fontSmall_, "La partida nueva empieza automáticamente en 20 segundos", 960, cardY + 660, COLOR_TEXT_MUTED, true);
+}
+
+void ArcheryGame::loadRanking() {
+    ranking_ = readRankingFile();
+}
+
+void ArcheryGame::submitRankingEntry() {
+    if (initialsEntry_.size() != 3) return;
+    for (char& letter : initialsEntry_) letter = static_cast<char>(std::toupper(static_cast<unsigned char>(letter)));
+    ranking_.push_back({initialsEntry_, totalScore_});
+    std::stable_sort(ranking_.begin(), ranking_.end(), [](const ScoreEntry& a, const ScoreEntry& b) {
+        return a.score > b.score;
+    });
+    if (ranking_.size() > 5) ranking_.resize(5);
+    writeRankingFile(ranking_);
+    finalScreenIdleTimer_ = 0.0f;
+    state_ = GameState::RANKING;
+}
+
+void ArcheryGame::renderInitialsEntry() {
+    SDL_SetRenderDrawColor(ren_, COLOR_BG.r, COLOR_BG.g, COLOR_BG.b, 255);
+    SDL_Rect backdrop{0, 0, 1920, 1080};
+    SDL_RenderFillRect(ren_, &backdrop);
+    drawBrutalistBox(ren_, 460, 250, 1000, 580, false, COLOR_CARD_BG, COLOR_ACCENT_GOLD, 16);
+    drawText(fontLarge_, "¡ANOTÁ TU PUNTAJE!", 960, 335, COLOR_TEXT_MAIN, true);
+    drawText(fontMed_, "Ingresá 3 iniciales", 960, 430, COLOR_TEXT_MAIN, true);
+    const std::string shown = initialsEntry_ + std::string(3 - initialsEntry_.size(), '_');
+    drawText(fontLarge_, shown, 960, 545, COLOR_ACCENT_BLUE, true);
+    drawText(fontSmall_, std::string("Letra actual: ") + initialsCursor_ + "   Flechas cambian / X agrega", 960, 625, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, "También podés escribir con el teclado; al completar 3 letras se guarda", 960, 675, COLOR_TEXT_MUTED, true);
+    drawText(fontSmall_, "Se inicia una partida nueva automáticamente en 20 segundos", 960, 755, COLOR_TEXT_MUTED, true);
+}
+
+void ArcheryGame::renderRanking() {
+    SDL_SetRenderDrawColor(ren_, COLOR_BG.r, COLOR_BG.g, COLOR_BG.b, 255);
+    SDL_Rect backdrop{0, 0, 1920, 1080};
+    SDL_RenderFillRect(ren_, &backdrop);
+    drawBrutalistBox(ren_, 510, 190, 900, 700, false, COLOR_CARD_BG, COLOR_ACCENT_GOLD, 16);
+    drawText(fontLarge_, "TOP 5 DE LA FERIA", 960, 270, COLOR_TEXT_MAIN, true);
+    for (int i = 0; i < 5; ++i) {
+        const int rowY = 370 + i * 78;
+        drawBrutalistBox(ren_, 650, rowY - 29, 620, 58, false, COLOR_CARD_MUTED,
+                         i == 0 ? COLOR_ACCENT_GOLD : COLOR_ACCENT_BLUE, 5);
+        const std::string entry = i < static_cast<int>(ranking_.size())
+            ? std::to_string(i + 1) + ".   " + ranking_[i].initials + "       " + std::to_string(ranking_[i].score)
+            : std::to_string(i + 1) + ".   ---       ---";
+        drawText(fontMed_, entry, 960, rowY, COLOR_TEXT_MAIN, true);
+    }
+    drawText(fontMed_, "[X / ENTER] Jugar de nuevo", 960, 790, COLOR_TEXT_MAIN, true);
+    drawText(fontSmall_, "Nueva partida automática en 20 segundos", 960, 840, COLOR_TEXT_MUTED, true);
 }

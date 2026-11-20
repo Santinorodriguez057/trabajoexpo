@@ -57,10 +57,18 @@ struct ConfettiPiece {
 
 enum class GameState {
     CALIBRATION,
+    CONTROLLER_DISCONNECTED,
     PLAYING,
     ROUND_SUMMARY,
     MATCH_OVER,
+    INITIALS_ENTRY,
+    RANKING,
     PAUSE_MENU
+};
+
+struct ScoreEntry {
+    std::string initials;
+    int score = 0;
 };
 
 class ArcheryGame {
@@ -87,9 +95,14 @@ private:
     void renderGun();
     void renderHUD();
     void renderCalibrationScreen();
+    void renderControllerReconnectScreen();
     void renderRoundSummary();
     void renderMatchOver();
+    void renderInitialsEntry();
+    void renderRanking();
     void renderPauseMenu();
+    void loadRanking();
+    void submitRankingEntry();
 
     void drawText(TTF_Font* font, const std::string& text, int x, int y, SDL_Color color, bool center = false);
     void drawCircleFilled(int cx, int cy, int radius, SDL_Color color);
@@ -113,7 +126,7 @@ private:
     bool running_ = true;
 
     // Configuración de partida
-    const int kTotalRounds = 10;
+    const int kTotalRounds = 5;
     const int kShotsPerRound = 5;
 
     int currentRound_ = 1;
@@ -124,8 +137,19 @@ private:
     int comboHits_ = 0;
     int totalHits_ = 0;
     int totalBullseyes_ = 0;
+    int totalGoldenTargetsHit_ = 0;
     int bestShotPoints_ = 0;
+    int roundHits_ = 0;
+    int roundErrors_ = 0;
+    int roundBadTargetsHit_ = 0;
+    int roundMaxCombo_ = 0;
+    int roundTimeBonus_ = 0;
     bool isNewRecord_ = false;
+    bool controllerCalibrationMode_ = false;
+    float calibrationProgress_ = 0.0f;
+    float calibrationCountdown_ = 0.0f;
+    float calibrationElapsed_ = 0.0f;
+    float recenterNoticeTimer_ = 0.0f;
 
     // Parámetros de la fila de latas en el puesto actual
     float targetDistance_ = 25.0f; // metros (Z)
@@ -171,5 +195,9 @@ private:
     float scorePulseTimer_ = 0.0f;
     float roundBannerTimer_ = 0.0f;
     float roundEndTimer_ = 0.0f;
+    float finalScreenIdleTimer_ = 0.0f;
+    char initialsCursor_ = 'A';
+    std::string initialsEntry_;
+    std::vector<ScoreEntry> ranking_;
     bool roundEnding_ = false;
 };

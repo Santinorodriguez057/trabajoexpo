@@ -4,12 +4,7 @@
 #include <cstdio>
 
 InputManager::InputManager(GameConfig& config)
-    : config_(config) {
-    // Inicializar con el sesgo físico medido del mando
-    gyroBiasX_ = 0.007580f;
-    gyroBiasY_ = -0.012994f;
-    gyroBiasZ_ = -0.002166f;
-}
+    : config_(config) {}
 
 InputManager::~InputManager() {
     closeController();
@@ -21,7 +16,6 @@ bool InputManager::init() {
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4_RUMBLE, "1");
 
     openFirstController();
-    calibrate();
     return true;
 }
 
@@ -36,6 +30,7 @@ void InputManager::openFirstController() {
 
                 if (hasGyro_) SDL_GameControllerSetSensorEnabled(controller_, SDL_SENSOR_GYRO, SDL_TRUE);
                 if (hasAccel_) SDL_GameControllerSetSensorEnabled(controller_, SDL_SENSOR_ACCEL, SDL_TRUE);
+                accelFilterInitialized_ = false;
 
                 // LED inicial: Azul turquesa listo
                 setLED(20, 180, 220);
@@ -46,6 +41,8 @@ void InputManager::openFirstController() {
 }
 
 void InputManager::closeController() {
+    gyroSpeedSamples_.clear();
+    gyroSpeedSampleSeconds_ = 0.0f;
     if (controller_) {
         setLED(0, 0, 0);
         SDL_GameControllerClose(controller_);
@@ -56,40 +53,49 @@ void InputManager::closeController() {
 }
 
 void InputManager::calibrate() {
+    completeCalibration();
+}
+
+void InputManager::beginCalibration() {
+    calibrationGyroSum_[0] = calibrationGyroSum_[1] = calibrationGyroSum_[2] = 0.0;
+    calibrationGyroSamples_ = 0;
+    telemetry_.postureValid = false;
+}
+
+void InputManager::accumulateCalibrationSample() {
+    if (!controller_ || !hasGyro_ || !telemetry_.postureValid) return;
+    for (int axis = 0; axis < 3; ++axis) calibrationGyroSum_[axis] += telemetry_.rawGyro[axis];
+    ++calibrationGyroSamples_;
+}
+
+void InputManager::completeCalibration() {
+    if (controller_ && hasGyro_) {
+        if (calibrationGyroSamples_ > 0) {
+            gyroBiasX_ = static_cast<float>(calibrationGyroSum_[0] / calibrationGyroSamples_);
+            gyroBiasY_ = static_cast<float>(calibrationGyroSum_[1] / calibrationGyroSamples_);
+            gyroBiasZ_ = static_cast<float>(calibrationGyroSum_[2] / calibrationGyroSamples_);
+        } else {
+            gyroBiasX_ = telemetry_.rawGyro[0];
+            gyroBiasY_ = telemetry_.rawGyro[1];
+            gyroBiasZ_ = telemetry_.rawGyro[2];
+        }
+    }
     targetAimX_ = 0.0f;
     targetAimY_ = 0.0f;
     state_.x = 0.0f;
     state_.y = 0.0f;
+    calibratedPitch_ = telemetry_.pitchDegrees * 0.0174532925f;
+    calibratedRoll_ = telemetry_.rollDegrees * 0.0174532925f;
+    calibratedYaw_ = 0.0f; // El acelerómetro no mide rumbo; el sesgo del gyro fija el cero.
+    for (int axis = 0; axis < 3; ++axis) calibratedAccel_[axis] = telemetry_.accel[axis];
+    currentPitchAngle_ = calibratedPitch_;
+    currentYawAngle_ = calibratedYaw_;
+    currentRollAngle_ = calibratedRoll_;
     postShotFreezeTimer_ = 0.0f;
     filteredTurnRate_ = 0.0f;
     filteredPitchRate_ = 0.0f;
     state_.calibrated = true;
-
-    if (controller_ && hasGyro_) {
-        float sumX = 0.0f, sumY = 0.0f, sumZ = 0.0f;
-        float minX = 999.0f, maxX = -999.0f;
-        float minY = 999.0f, maxY = -999.0f;
-        float minZ = 999.0f, maxZ = -999.0f;
-        const int kSamples = 25;
-        for (int i = 0; i < kSamples; ++i) {
-            float g[3] = {0, 0, 0};
-            SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_GYRO, g, 3);
-            sumX += g[0]; sumY += g[1]; sumZ += g[2];
-            minX = std::min(minX, g[0]); maxX = std::max(maxX, g[0]);
-            minY = std::min(minY, g[1]); maxY = std::max(maxY, g[1]);
-            minZ = std::min(minZ, g[2]); maxZ = std::max(maxZ, g[2]);
-            SDL_Delay(2);
-        }
-        // Centrar funciona en cualquier postura. Solo aprender un nuevo sesgo
-        // cuando el mando está quieto; si se mueve, conservar el último valor bueno.
-        if ((maxX - minX < 0.0035f) && (maxY - minY < 0.0035f) && (maxZ - minZ < 0.0035f)) {
-            gyroBiasX_ = sumX / kSamples;
-            gyroBiasY_ = sumY / kSamples;
-            gyroBiasZ_ = sumZ / kSamples;
-        }
-    }
-
-    // Feedback táctil de recentrado
+    beginCalibration();
     setRumble(0.20f, 0.40f, 140);
 }
 
@@ -103,6 +109,12 @@ void InputManager::recenterAim() {
     postShotFreezeTimer_ = 0.12f;
     rumbleSuppressTimer_ = std::max(rumbleSuppressTimer_, 0.12f);
     state_.calibrated = true;
+}
+
+bool InputManager::takeRecenterRequest() {
+    const bool requested = recenterRequested_;
+    recenterRequested_ = false;
+    return requested;
 }
 
 float InputManager::applyDeadzone(float value, float deadzone) {
@@ -145,8 +157,6 @@ void InputManager::handleEvent(const SDL_Event& ev) {
     } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
         if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_START || ev.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
             pausePressed_ = true;
-        } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_Y || ev.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
-            calibrate();
         } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
             confirmPressed_ = true;
         } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B) {
@@ -156,10 +166,12 @@ void InputManager::handleEvent(const SDL_Event& ev) {
         if (ev.key.keysym.sym == SDLK_ESCAPE) {
             pausePressed_ = true;
         } else if (ev.key.keysym.sym == SDLK_c || ev.key.keysym.sym == SDLK_r) {
-            calibrate();
+            recenterKeyDown_ = true;
         } else if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_SPACE) {
             confirmPressed_ = true;
         }
+    } else if (ev.type == SDL_KEYUP && (ev.key.keysym.sym == SDLK_c || ev.key.keysym.sym == SDLK_r)) {
+        recenterKeyDown_ = false;
     } else if (ev.type == SDL_MOUSEMOTION) {
         if (!controller_ || !hasGyro_) {
             targetAimX_ += (ev.motion.xrel * 0.0028f) * config_.sensitivityX;
@@ -178,6 +190,91 @@ void InputManager::handleEvent(const SDL_Event& ev) {
 
 void InputManager::update(float dt) {
     dt = std::clamp(dt, 0.0f, 0.05f);
+
+    telemetry_.hasGyro = controller_ && hasGyro_;
+    telemetry_.hasAccel = controller_ && hasAccel_;
+    telemetry_.gyroSpeed = 0.0f;
+    bool gyroReadSucceeded = false;
+    if (controller_ && hasGyro_) {
+        float gyro[3] = {};
+        if (SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_GYRO, gyro, 3) == 0) {
+            gyroReadSucceeded = true;
+            for (int axis = 0; axis < 3; ++axis) telemetry_.rawGyro[axis] = gyro[axis];
+            const float gx = gyro[0] - gyroBiasX_;
+            const float gy = gyro[1] - gyroBiasY_;
+            const float gz = gyro[2] - gyroBiasZ_;
+            telemetry_.gyroSpeed = std::sqrt(gx * gx + gy * gy + gz * gz);
+        }
+    }
+    if (dt > 0.0f) {
+        const float instantaneousSpeed = gyroReadSucceeded
+            ? telemetry_.gyroSpeed : CalibrationTuning::kQuietGyroRadPerSec * 2.0f;
+        gyroSpeedSamples_.push_back({dt, instantaneousSpeed});
+        gyroSpeedSampleSeconds_ += dt;
+        while (gyroSpeedSampleSeconds_ > CalibrationTuning::kGyroAverageWindowSeconds &&
+               !gyroSpeedSamples_.empty()) {
+            const float excess = gyroSpeedSampleSeconds_ - CalibrationTuning::kGyroAverageWindowSeconds;
+            if (gyroSpeedSamples_.front().first <= excess) {
+                gyroSpeedSampleSeconds_ -= gyroSpeedSamples_.front().first;
+                gyroSpeedSamples_.pop_front();
+            } else {
+                gyroSpeedSamples_.front().first -= excess;
+                gyroSpeedSampleSeconds_ -= excess;
+            }
+        }
+        if (!gyroSpeedSamples_.empty() && gyroSpeedSampleSeconds_ > 0.0f) {
+            float weightedSpeed = 0.0f;
+            for (const auto& sample : gyroSpeedSamples_) weightedSpeed += sample.first * sample.second;
+            telemetry_.gyroSpeed = weightedSpeed / gyroSpeedSampleSeconds_;
+        }
+    }
+    telemetry_.quietness = std::clamp(
+        1.0f - telemetry_.gyroSpeed / CalibrationTuning::kQuietnessScoreRangeRadPerSec, 0.0f, 1.0f);
+    if (controller_ && hasAccel_) {
+        float accel[3] = {};
+        if (SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_ACCEL, accel, 3) == 0) {
+            for (int axis = 0; axis < 3; ++axis) telemetry_.rawAccel[axis] = accel[axis];
+            if (!accelFilterInitialized_) {
+                for (int axis = 0; axis < 3; ++axis) filteredAccel_[axis] = accel[axis];
+                accelFilterInitialized_ = true;
+            } else {
+                const float alpha = dt > 0.0f
+                    ? 1.0f - std::exp(-dt / CalibrationTuning::kAccelLowPassSeconds) : 0.0f;
+                for (int axis = 0; axis < 3; ++axis)
+                    filteredAccel_[axis] += (accel[axis] - filteredAccel_[axis]) * alpha;
+            }
+            for (int axis = 0; axis < 3; ++axis) telemetry_.accel[axis] = filteredAccel_[axis];
+
+            // SDL2 defines controller axes as X=left/right, Y=bottom/top,
+            // Z=far/near. At rest, gravity is positive on Y, not Z.
+            const float ax = filteredAccel_[0];
+            const float ay = filteredAccel_[1];
+            const float az = filteredAccel_[2];
+            telemetry_.rollDegrees = std::atan2(ax, ay) * 57.2957795f;
+            telemetry_.pitchDegrees = std::atan2(az, std::sqrt(ax * ax + ay * ay)) * 57.2957795f;
+        }
+    }
+    telemetry_.postureValid = telemetry_.hasGyro &&
+        telemetry_.gyroSpeed < CalibrationTuning::kQuietGyroRadPerSec &&
+        telemetry_.quietness >= CalibrationTuning::kMinimumQuietness;
+
+    const bool controllerRecenterHeld = controller_ &&
+        (SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_Y) ||
+         SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_LEFTSHOULDER));
+    const bool recenterHeld = controllerRecenterHeld || recenterKeyDown_;
+    if (recenterHeld && !recenterLatched_) {
+        recenterHoldProgress_ = std::min(CalibrationTuning::kRecenterHoldSeconds, recenterHoldProgress_ + dt);
+        if (recenterHoldProgress_ >= CalibrationTuning::kRecenterHoldSeconds) {
+            recenterRequested_ = true;
+            recenterHoldProgress_ = 0.0f;
+            recenterLatched_ = true;
+        }
+    } else {
+        if (!recenterHeld) {
+            recenterHoldProgress_ = 0.0f;
+            recenterLatched_ = false;
+        }
+    }
 
     rumbleSuppressTimer_ = std::max(0.0f, rumbleSuppressTimer_ - dt);
 
@@ -210,8 +307,7 @@ void InputManager::update(float dt) {
 
     // 2. Apuntado con sensores del DualShock 4
     if (controller_ && hasGyro_) {
-        float gyro[3] = {0, 0, 0};
-        SDL_GameControllerGetSensorData(controller_, SDL_SENSOR_GYRO, gyro, 3);
+        float gyro[3] = {telemetry_.rawGyro[0], telemetry_.rawGyro[1], telemetry_.rawGyro[2]};
 
         // Descontar sesgo de reposo exacto
         float gx = gyro[0] - gyroBiasX_;
@@ -257,8 +353,8 @@ void InputManager::update(float dt) {
         float filteredPitch = applyDeadzone(pitchForAim, effectiveDeadzone);
 
         // Integración de velocidad angular con amortiguación
-        float moveX = filteredTurn * config_.sensitivityX * dt * 2.0f;
-        float moveY = filteredPitch * config_.sensitivityY * dt * 2.0f;
+        float moveX = filteredTurn * config_.sensitivityX * dt * CalibrationTuning::kAimSensitivityGain;
+        float moveY = filteredPitch * config_.sensitivityY * dt * CalibrationTuning::kAimSensitivityGain;
 
         targetAimX_ += moveX;
         targetAimY_ += moveY;

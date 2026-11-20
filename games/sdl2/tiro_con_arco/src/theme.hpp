@@ -40,7 +40,7 @@ namespace ArcheryTheme {
     constexpr bool EXTRA_ENABLE_RUMBLE         = true; // Vibración al disparar y acertar
     constexpr bool EXTRA_ENABLE_FLOATING_TEXTS = true; // Puntuación flotante y temblor
     constexpr bool EXTRA_ENABLE_SAVED_RECORD   = true; // Guardado de récord en archivo
-    constexpr bool EXTRA_ENABLE_SUMMARY_SCREEN = true; // Pantalla de resumen tras 10 rondas
+    constexpr bool EXTRA_ENABLE_SUMMARY_SCREEN = true; // Pantalla de resumen tras la última ronda
 
     // =========================================================================
     // HELPERS DE RENDERIZADO NEO-BRUTALISTA

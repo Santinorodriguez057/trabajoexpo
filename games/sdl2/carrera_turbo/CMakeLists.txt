@@ -12,10 +12,11 @@ add_executable(carrera_turbo
     src/sound.cpp
 )
 
-set(CARRERA_LIBS SDL2::SDL2)
+set(CARRERA_LIBS)
 if(TARGET SDL2::SDL2main)
     list(APPEND CARRERA_LIBS SDL2::SDL2main)
 endif()
+list(APPEND CARRERA_LIBS SDL2::SDL2)
 
 if(TARGET SDL2::SDL2_ttf)
     list(APPEND CARRERA_LIBS SDL2::SDL2_ttf)
