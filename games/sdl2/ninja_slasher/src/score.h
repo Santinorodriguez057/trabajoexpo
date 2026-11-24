@@ -9,6 +9,16 @@ struct FloatingScore {
     std::string text;
     float life = 1.0f;
     int r = 255, g = 255, b = 255;
+    float scaleMul = 1.0f;
+};
+
+struct MultiSliceBanner {
+    float x = 0.0f;
+    float y = 0.0f;
+    int count = 0;
+    int bonus = 0;
+    int playerIndex = 0;
+    float life = 0.0f; // 1.0 -> 0.0
 };
 
 class ScoreSystem {
@@ -17,6 +27,7 @@ public:
 
     void reset();
     void addCut(int playerIndex, int basePoints, bool isPerfect, float x, float y);
+    int addMultiSliceBonus(int playerIndex, int sliceCount, float x, float y);
     void registerMineHit(int playerIndex, float x, float y);
     void registerDropMiss(float x, float y);
     void update(float dt);
@@ -33,6 +44,10 @@ public:
     void loseLife() { if (lives_ > 0) --lives_; }
 
     const std::vector<FloatingScore>& getFloatingScores() const { return floatingScores_; }
+    const std::vector<MultiSliceBanner>& getMultiBanners() const { return multiBanners_; }
+
+    static int loadBestScore();
+    static void saveBestScore(int best);
 
 private:
     int p1Score_ = 0;
@@ -45,5 +60,6 @@ private:
     int lives_ = 3;
 
     std::vector<FloatingScore> floatingScores_;
+    std::vector<MultiSliceBanner> multiBanners_;
 };
 

@@ -15,78 +15,9 @@
 #include "collision.h"
 #include "score.h"
 #include "renderer.h"
+#include "sound.h"
 
 namespace {
-    // Generador procedural de efectos de sonido sintetizados (WAV mono 16-bit)
-    Mix_Chunk* createProceduralTone(int durationMs, int freqStart, int freqEnd, float volume = 0.5f, int type = 0) {
-        int sampleRate = 44100;
-        int numSamples = (sampleRate * durationMs) / 1000;
-        int16_t* buffer = (int16_t*)std::malloc(numSamples * sizeof(int16_t));
-        if (!buffer) return nullptr;
-
-        for (int i = 0; i < numSamples; ++i) {
-            float frac = static_cast<float>(i) / numSamples;
-            float t = static_cast<float>(i) / sampleRate;
-            float curFreq = freqStart + (freqEnd - freqStart) * frac;
-            float env = std::exp(-frac * 6.0f);
-            float sample = 0.0f;
-
-            if (type == 0) {
-                // Tajo de espada / Katana Slice (Ruido filtrado con silbido de alta frecuencia)
-                float noise = ((std::rand() % 2000) / 1000.0f) - 1.0f;
-                sample = std::sin(2.0f * 3.14159f * curFreq * t) * 0.4f + noise * 0.6f;
-            } else if (type == 1) {
-                // Corte perfecto / Hit metálico con armónicos
-                sample = std::sin(2.0f * 3.14159f * curFreq * t) * 0.6f +
-                         std::sin(2.0f * 3.14159f * curFreq * 2.2f * t) * 0.4f;
-            } else if (type == 2) {
-                // Explosión de mina PEM (Sub-grave y ruido estático)
-                float noise = ((std::rand() % 2000) / 1000.0f) - 1.0f;
-                float sub = std::sin(2.0f * 3.14159f * 65.0f * t);
-                sample = noise * 0.7f + sub * 0.5f;
-            } else if (type == 3) {
-                // Pulso limpio de cuenta regresiva / UI
-                sample = std::sin(2.0f * 3.14159f * curFreq * t) * 0.75f +
-                         std::sin(2.0f * 3.14159f * curFreq * 1.5f * t) * 0.25f;
-            } else if (type == 4) {
-                // Killstreak estilo Valorant / LoL: golpe percusivo grave + nota cálida resonante (sin vibrato molesto)
-                float attack = std::min(1.0f, i / (sampleRate * 0.004f));
-                // Sub-thump inicial ("punch" de satisfacción tipo hitmarker de Valorant)
-                float punchFreq = 135.0f * std::exp(-t * 32.0f) + 52.0f;
-                float punch = std::sin(2.0f * 3.14159f * punchFreq * t) * std::exp(-t * 24.0f) * 0.65f;
-
-                // Nota musical en acorde de quinta justa (poderoso y limpio) con octava grave de cuerpo
-                float subOct = std::sin(2.0f * 3.14159f * (curFreq * 0.5f) * t) * 0.40f;
-                float root   = std::sin(2.0f * 3.14159f * curFreq * t) * 0.55f;
-                float fifth  = std::sin(2.0f * 3.14159f * (curFreq * 1.4983f) * t) * 0.32f;
-                float spark  = std::sin(2.0f * 3.14159f * (curFreq * 2.0f) * t) * std::exp(-frac * 10.0f) * 0.22f;
-
-                sample = (punch + (subOct + root + fifth + spark) * std::exp(-frac * 4.5f)) * attack;
-                env = 1.0f; // La envolvente ya está aplicada con precisión por componente
-            } else if (type == 5) {
-                // Fanfarria de Power-up / Ace: barrido de acorde mayor cálido con impacto grave
-                float attack = std::min(1.0f, i / (sampleRate * 0.006f));
-                float bass   = std::sin(2.0f * 3.14159f * (curFreq * 0.5f) * t) * 0.45f;
-                float c1     = std::sin(2.0f * 3.14159f * curFreq * t) * 0.50f;
-                float c2     = std::sin(2.0f * 3.14159f * (curFreq * 1.2599f) * t) * 0.38f; // Tercera mayor
-                float c3     = std::sin(2.0f * 3.14159f * (curFreq * 1.4983f) * t) * 0.35f; // Quinta justa
-                sample = (bass + c1 + c2 + c3) * 0.52f * attack;
-                env = std::exp(-frac * 3.2f);
-            }
-
-            float val = std::clamp(sample * env * volume * 32760.0f, -32760.0f, 32760.0f);
-            buffer[i] = static_cast<int16_t>(val);
-        }
-
-        Mix_Chunk* chunk = (Mix_Chunk*)std::malloc(sizeof(Mix_Chunk));
-        if (!chunk) { std::free(buffer); return nullptr; }
-        chunk->allocated = 1;
-        chunk->abuf = (Uint8*)buffer;
-        chunk->alen = numSamples * sizeof(int16_t);
-        chunk->volume = static_cast<Uint8>(volume * 128);
-        return chunk;
-    }
-
     TTF_Font* loadSystemFont(int size) {
         std::vector<std::string> candidates = {
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -107,6 +38,12 @@ namespace {
         if (score >= 1200) return 'B';
         if (score >= 500)  return 'C';
         return 'D';
+    }
+
+    int ratingToAudioCode(CutRating r) {
+        if (r == CutRating::PERFECT) return 3;
+        if (r == CutRating::GOOD) return 2;
+        return 1; // GRAZE
     }
 }
 
@@ -131,7 +68,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 1024);
+    SoundSystem sound;
+    sound.init();
+    sound.startMenuBgm();
 
     const int kWidth = 1920;
     const int kHeight = 1080;
@@ -141,6 +80,8 @@ int main(int argc, char* argv[]) {
                                           kWidth, kHeight,
                                           SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN_DESKTOP);
     if (!window) {
+        sound.shutdown();
+        TTF_Quit();
         SDL_Quit();
         return 1;
     }
@@ -148,6 +89,8 @@ int main(int argc, char* argv[]) {
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!renderer) {
         SDL_DestroyWindow(window);
+        sound.shutdown();
+        TTF_Quit();
         SDL_Quit();
         return 1;
     }
@@ -160,21 +103,6 @@ int main(int argc, char* argv[]) {
     TTF_Font* fontTitle    = loadSystemFont(50);
     TTF_Font* fontHud      = loadSystemFont(32);
     TTF_Font* fontSmall    = loadSystemFont(22);
-
-    Mix_Chunk* sfxSlice   = createProceduralTone(120, 800, 250, 0.6f, 0);
-    Mix_Chunk* sfxPerfect = createProceduralTone(180, 520, 1040, 0.75f, 1);
-    Mix_Chunk* sfxExplode = createProceduralTone(380, 180, 50, 0.85f, 2);
-    Mix_Chunk* sfxBeep    = createProceduralTone(110, 660, 660, 0.55f, 3);
-    Mix_Chunk* sfxGo      = createProceduralTone(220, 880, 1320, 0.7f, 3);
-    Mix_Chunk* sfxPowerup = createProceduralTone(300, 330, 660, 0.75f, 5); // Fanfarria cálida de power-up
-
-    // Escala pentatónica menor ascendente (estilo Killstreak Valorant: A3 -> C4 -> D4 -> E4 -> G4 -> A4 -> C5 -> E5)
-    // Registro medio-grave con cuerpo percusivo, sin frecuencias estridentes ni pitch-slide
-    const int streakFreqs[8] = {220, 262, 294, 330, 392, 440, 523, 659};
-    Mix_Chunk* sfxKillstreak[8];
-    for (int k = 0; k < 8; ++k) {
-        sfxKillstreak[k] = createProceduralTone(240, streakFreqs[k], streakFreqs[k], 0.72f, 4);
-    }
 
     // Sistema de entrada táctil para P1 y P2
     TouchInput touchP1(0, CyberTheme::cP1Cyan);
@@ -229,6 +157,8 @@ int main(int argc, char* argv[]) {
     std::vector<SlashFlash> flashes;
 
     GameState state = GameState::MODE_SELECT;
+    bool isPaused = false;
+    int pauseSelected = 0; // 0 = Continuar, 1 = Salir del juego
     bool isVersus = false;
     int selectedMode = 0; // 0 = Solo, 1 = 1v1 Versus
     float globalTime = 0.0f;
@@ -240,6 +170,8 @@ int main(int argc, char* argv[]) {
     float hitStopTimer = 0.0f;
     float shakeTimer = 0.0f;
     float shakeMag = 0.0f;
+    float empFlashTimer = 0.0f;
+    float dangerPulseTimer = 0.0f;
     float gameOverAnim = 0.0f;
 
     // Estadísticas y contadores animados (Game-Feel)
@@ -249,10 +181,16 @@ int main(int argc, char* argv[]) {
     int cutsCount[2] = {0, 0};
     int perfectsCount[2] = {0, 0};
     int maxCombo[2] = {0, 0};
-    int bestScore = 0;
+    int bestScore = ScoreSystem::loadBestScore();
     bool newRecordAchieved = false;
     bool prevBtnRestart = false;
     float menuDemoTimer = 0.8f;
+
+    // Ventana de ráfaga para Multi-Slice ("¡TAJO MÚLTIPLE x2 / x3 / x4!")
+    int burstSwipeId[2] = {-1, -1};
+    int burstCount[2] = {0, 0};
+    int burstAnnounced[2] = {1, 1};
+    float burstTimer[2] = {0.0f, 0.0f};
 
     // Temporizadores de Power-ups
     float freezeTimer = 0.0f;
@@ -275,7 +213,7 @@ int main(int argc, char* argv[]) {
         sf.x = e.getX();
         sf.y = e.getY();
         sf.angle = res.cutAngle;
-        sf.length = res.isMine ? 290.0f : (isPerf ? 260.0f : 200.0f);
+        sf.length = res.isMine ? 290.0f : (isPerf ? 265.0f : 200.0f);
         sf.life = 1.0f;
         sf.color = res.isMine ? CyberTheme::cRed : (isPerf ? CyberTheme::cYellow : pCol);
         flashes.push_back(sf);
@@ -285,22 +223,22 @@ int main(int argc, char* argv[]) {
         sr.x = e.getX();
         sr.y = e.getY();
         sr.radius = e.getRadius() * 0.55f;
-        sr.maxRadius = res.isMine ? 220.0f : (isPerf ? 165.0f : 120.0f);
+        sr.maxRadius = res.isMine ? 225.0f : (isPerf ? 170.0f : 120.0f);
         sr.thickness = res.isMine ? 16.0f : 12.0f;
         sr.life = 1.0f;
         sr.color = res.isMine ? CyberTheme::cRed : (isPerf ? CyberTheme::cGreen : pCol);
         rings.push_back(sr);
 
         // Chispas geométricas rotatorias con borde negro
-        int numSparks = res.isMine ? 26 : (isPerf ? 20 : 14);
+        int numSparks = res.isMine ? 28 : (isPerf ? 22 : 14);
         for (int p = 0; p < numSparks; ++p) {
             SparkParticle sp;
             sp.x = e.getX();
             sp.y = e.getY();
             float a = (std::rand() % 628) / 100.0f;
-            float s = 180.0f + (std::rand() % 420);
+            float s = 180.0f + (std::rand() % 430);
             sp.vx = std::cos(a) * s;
-            sp.vy = std::sin(a) * s - 80.0f;
+            sp.vy = std::sin(a) * s - 85.0f;
             sp.size = 7.0f + (std::rand() % 8);
             sp.life = 0.55f + (std::rand() % 35) / 100.0f;
             sp.rot = static_cast<float>(std::rand() % 360);
@@ -332,15 +270,24 @@ int main(int argc, char* argv[]) {
         displayScoreF[0] = displayScoreF[1] = 0.0f;
         scorePop[0] = scorePop[1] = 0.0f;
         lifeShake = 0.0f;
+        empFlashTimer = 0.0f;
+        dangerPulseTimer = 0.0f;
         cutsCount[0] = cutsCount[1] = 0;
         perfectsCount[0] = perfectsCount[1] = 0;
         maxCombo[0] = maxCombo[1] = 0;
+        for (int p = 0; p < 2; ++p) {
+            burstSwipeId[p] = -1;
+            burstCount[p] = 0;
+            burstAnnounced[p] = 1;
+            burstTimer[p] = 0.0f;
+        }
         newRecordAchieved = false;
         freezeTimer = 0.0f;
         dualTimer[0] = dualTimer[1] = 0.0f;
         frenzyTimer[0] = frenzyTimer[1] = 0.0f;
         touchP1.setDualBlade(false);
         touchP2.setDualBlade(false);
+        sound.startGameBgm();
     };
 
     bool running = true;
@@ -355,36 +302,51 @@ int main(int argc, char* argv[]) {
 
         globalTime += dtReal;
 
-        // Actualizar temporizadores de power-ups
-        if (freezeTimer > 0.0f) freezeTimer = std::max(0.0f, freezeTimer - dtReal);
-        for (int p = 0; p < 2; ++p) {
-            if (dualTimer[p] > 0.0f) {
-                dualTimer[p] = std::max(0.0f, dualTimer[p] - dtReal);
-                if (p == 0) touchP1.setDualBlade(dualTimer[0] > 0.0f);
-                else touchP2.setDualBlade(dualTimer[1] > 0.0f);
+        // Actualizar temporizadores de power-ups y multi-slice (congelados mientras el menú de pausa está abierto)
+        if (!isPaused) {
+            if (freezeTimer > 0.0f) freezeTimer = std::max(0.0f, freezeTimer - dtReal);
+            if (empFlashTimer > 0.0f) empFlashTimer = std::max(0.0f, empFlashTimer - dtReal * 2.8f);
+            for (int p = 0; p < 2; ++p) {
+                if (dualTimer[p] > 0.0f) {
+                    dualTimer[p] = std::max(0.0f, dualTimer[p] - dtReal);
+                    if (p == 0) touchP1.setDualBlade(dualTimer[0] > 0.0f);
+                    else touchP2.setDualBlade(dualTimer[1] > 0.0f);
+                }
+                if (frenzyTimer[p] > 0.0f) frenzyTimer[p] = std::max(0.0f, frenzyTimer[p] - dtReal);
+                if (burstTimer[p] > 0.0f) {
+                    burstTimer[p] = std::max(0.0f, burstTimer[p] - dtReal);
+                    if (burstTimer[p] <= 0.0f) {
+                        burstCount[p] = 0;
+                        burstAnnounced[p] = 1;
+                    }
+                }
             }
-            if (frenzyTimer[p] > 0.0f) frenzyTimer[p] = std::max(0.0f, frenzyTimer[p] - dtReal);
         }
+
+        // Atenuar música durante pausa, cámara lenta o congelación
+        sound.setBgmDuck(isPaused || freezeTimer > 0.0f || slowMoTimer > 0.0f);
 
         // Hit-stop (micro-pausa de impacto) y cámara lenta cinematográfica
-        float dt = dtReal;
-        if (hitStopTimer > 0.0f) {
-            hitStopTimer -= dtReal;
-            dt = 0.0f;
-        } else if (slowMoTimer > 0.0f || freezeTimer > 0.0f) {
-            if (slowMoTimer > 0.0f) slowMoTimer -= dtReal;
-            dt *= (freezeTimer > 0.0f) ? 0.30f : 0.35f;
-        }
+        float dt = isPaused ? 0.0f : dtReal;
+        if (!isPaused) {
+            if (hitStopTimer > 0.0f) {
+                hitStopTimer -= dtReal;
+                dt = 0.0f;
+            } else if (slowMoTimer > 0.0f || freezeTimer > 0.0f) {
+                if (slowMoTimer > 0.0f) slowMoTimer -= dtReal;
+                dt *= (freezeTimer > 0.0f) ? 0.30f : 0.35f;
+            }
 
-        if (shakeTimer > 0.0f) {
-            shakeTimer = std::max(0.0f, shakeTimer - dtReal);
-        }
-        if (lifeShake > 0.0f) {
-            lifeShake = std::max(0.0f, lifeShake - dtReal * 2.2f);
-        }
-        for (int i = 0; i < 2; ++i) {
-            if (scorePop[i] > 0.0f) {
-                scorePop[i] = std::max(0.0f, scorePop[i] - dtReal * 3.2f);
+            if (shakeTimer > 0.0f) {
+                shakeTimer = std::max(0.0f, shakeTimer - dtReal);
+            }
+            if (lifeShake > 0.0f) {
+                lifeShake = std::max(0.0f, lifeShake - dtReal * 2.2f);
+            }
+            for (int i = 0; i < 2; ++i) {
+                if (scorePop[i] > 0.0f) {
+                    scorePop[i] = std::max(0.0f, scorePop[i] - dtReal * 3.2f);
+                }
             }
         }
 
@@ -409,27 +371,91 @@ int main(int argc, char* argv[]) {
                 hasTwoDualshocks = (touchP1.getController() != nullptr && touchP2.getController() != nullptr);
             }
 
-            // Tecla de salida rápida / navegación en menú
+            // Menú de Pausa con botón OPTIONS (START) o ESC
+            if (isPaused) {
+                if (ev.type == SDL_KEYDOWN) {
+                    if (ev.key.keysym.sym == SDLK_UP || ev.key.keysym.sym == SDLK_w ||
+                        ev.key.keysym.sym == SDLK_DOWN || ev.key.keysym.sym == SDLK_s) {
+                        pauseSelected = (pauseSelected + 1) % 2;
+                        sound.playUiNav();
+                    } else if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_SPACE) {
+                        sound.playUiConfirm();
+                        if (pauseSelected == 0) {
+                            isPaused = false;
+                            prevBtnRestart = true;
+                        } else {
+                            running = false;
+                        }
+                    } else if (ev.key.keysym.sym == SDLK_ESCAPE) {
+                        sound.playUiNav();
+                        isPaused = false;
+                    }
+                } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
+                    if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP ||
+                        ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
+                        pauseSelected = (pauseSelected + 1) % 2;
+                        sound.playUiNav();
+                    } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
+                        sound.playUiConfirm();
+                        if (pauseSelected == 0) {
+                            isPaused = false;
+                            prevBtnRestart = true;
+                        } else {
+                            running = false;
+                        }
+                    } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B ||
+                               ev.cbutton.button == SDL_CONTROLLER_BUTTON_START ||
+                               ev.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
+                        sound.playUiNav();
+                        isPaused = false;
+                    }
+                } else if (ev.type == SDL_JOYBUTTONDOWN) {
+                    if (ev.jbutton.button == 0) {
+                        sound.playUiConfirm();
+                        if (pauseSelected == 0) {
+                            isPaused = false;
+                            prevBtnRestart = true;
+                        } else {
+                            running = false;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // Tecla / botón de pausa o navegación en menú
             if (ev.type == SDL_KEYDOWN) {
                 if (ev.key.keysym.sym == SDLK_ESCAPE) {
-                    running = false;
+                    isPaused = true;
+                    pauseSelected = 0;
+                    sound.playUiNav();
                 } else if (state == GameState::MODE_SELECT) {
-                    if (ev.key.keysym.sym == SDLK_LEFT) selectedMode = 0;
-                    if (ev.key.keysym.sym == SDLK_RIGHT && hasTwoDualshocks) selectedMode = 1;
+                    if (ev.key.keysym.sym == SDLK_LEFT && selectedMode != 0) {
+                        selectedMode = 0;
+                        sound.playUiNav();
+                    }
+                    if (ev.key.keysym.sym == SDLK_RIGHT && hasTwoDualshocks && selectedMode != 1) {
+                        selectedMode = 1;
+                        sound.playUiNav();
+                    }
                     if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_SPACE) {
                         menuConfirmPressed = true;
                     }
                 }
             } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
                 if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_BACK || ev.cbutton.button == SDL_CONTROLLER_BUTTON_START) {
-                    running = false;
+                    isPaused = true;
+                    pauseSelected = 0;
+                    touchP1.triggerHaptic(0.0f, 0.0f, 0);
+                    touchP2.triggerHaptic(0.0f, 0.0f, 0);
+                    sound.playUiNav();
                 } else if (state == GameState::MODE_SELECT) {
-                    if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT) {
+                    if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT && selectedMode != 0) {
                         selectedMode = 0;
-                        Mix_PlayChannel(-1, sfxBeep, 0);
-                    } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT && hasTwoDualshocks) {
+                        sound.playUiNav();
+                    } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT && hasTwoDualshocks && selectedMode != 1) {
                         selectedMode = 1;
-                        Mix_PlayChannel(-1, sfxBeep, 0);
+                        sound.playUiNav();
                     } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
                         menuConfirmPressed = true;
                     }
@@ -446,10 +472,15 @@ int main(int argc, char* argv[]) {
         }
 
         // --- ACTUALIZACIÓN SEGÚN ESTADO ---
-        if (state == GameState::MODE_SELECT) {
+        if (isPaused) {
+            // El juego permanece completamente congelado hasta continuar o salir
+        } else if (state == GameState::MODE_SELECT) {
             menuAnim = std::min(1.0f, menuAnim + dtReal * 2.2f);
             touchP1.update(dtReal, kWidth, kHeight);
             touchP2.update(dtReal, kWidth, kHeight);
+
+            if (touchP1.consumeWhooshPulse()) sound.playWhoosh(0, false);
+            if (hasTwoDualshocks && touchP2.consumeWhooshPulse()) sound.playWhoosh(1, false);
 
             // Lanzar algunos objetos de exhibición en el fondo para que el jugador pueda probar el touchpad
             menuDemoTimer -= dtReal;
@@ -471,11 +502,13 @@ int main(int argc, char* argv[]) {
             const auto& p2Demo = touchP2.getActiveSlashes();
             demoSlashes.insert(demoSlashes.end(), p2Demo.begin(), p2Demo.end());
 
+            int prevMode = selectedMode;
             if (hasTwoDualshocks && touchP1.isFingerDown()) {
                 selectedMode = (touchP1.getFingerX() < kWidth * 0.5f) ? 0 : 1;
             } else if (hasTwoDualshocks && touchP2.isFingerDown()) {
                 selectedMode = 1;
             }
+            if (selectedMode != prevMode) sound.playUiNav();
 
             for (const auto& slash : demoSlashes) {
                 for (auto& e : entities) {
@@ -485,7 +518,7 @@ int main(int argc, char* argv[]) {
                         e.kill();
                         e.spawnHalves(res.cutAngle, halves);
                         spawnCutEffects(e, slash, res);
-                        Mix_PlayChannel(-1, (res.rating == CutRating::PERFECT) ? sfxPerfect : sfxSlice, 0);
+                        sound.playSlice(ratingToAudioCode(res.rating), e.getType() == EntityType::MECHA_SHURIKEN);
                         triggerShake(8.0f, 0.12f);
                     }
                 }
@@ -495,7 +528,7 @@ int main(int argc, char* argv[]) {
                            entities.end());
 
             if (menuConfirmPressed) {
-                Mix_PlayChannel(-1, sfxGo, 0);
+                sound.playUiConfirm();
                 startCountdown(selectedMode == 1 && hasTwoDualshocks);
             }
 
@@ -507,7 +540,7 @@ int main(int argc, char* argv[]) {
             int curNum = static_cast<int>(std::ceil(countdownTimer - 0.35f));
             if (curNum < lastCountdownBeep && curNum >= 0) {
                 lastCountdownBeep = curNum;
-                Mix_PlayChannel(-1, (curNum > 0) ? sfxBeep : sfxGo, 0);
+                sound.playCountdownBeep(curNum == 0);
                 if (curNum == 0) triggerShake(10.0f, 0.15f);
             }
             if (countdownTimer <= 0.0f) {
@@ -523,6 +556,7 @@ int main(int argc, char* argv[]) {
                     gameOverAnim = 0.0f;
                     displayScoreF[0] = displayScoreF[1] = 0.0f;
                     prevBtnRestart = true;
+                    sound.playGameOver(scoreSys.getScore(0) != scoreSys.getScore(1));
                 }
             } else {
                 // Modo Solo: dura hasta que el jugador pierde las 3 vidas (por mina o dejar caer objeto)
@@ -535,12 +569,30 @@ int main(int argc, char* argv[]) {
                         bestScore = scoreSys.getScore(0);
                         newRecordAchieved = true;
                     }
+                    if (newRecordAchieved) {
+                        ScoreSystem::saveBestScore(bestScore);
+                    }
+                    sound.playGameOver(newRecordAchieved);
                 }
             }
 
             touchP1.update(dtReal, kWidth, kHeight);
+            if (touchP1.consumeWhooshPulse()) sound.playWhoosh(0, frenzyTimer[0] > 0.0f);
             if (isVersus) {
                 touchP2.update(dtReal, kWidth, kHeight);
+                if (touchP2.consumeWhooshPulse()) sound.playWhoosh(1, frenzyTimer[1] > 0.0f);
+            }
+
+            // Latido de alerta sonora cuando queda 1 vida o últimos 8 segundos en Versus
+            bool criticalDanger = (!isVersus && scoreSys.getLives() == 1) || (isVersus && matchTimer <= 8.0f && matchTimer > 0.2f);
+            if (criticalDanger && state == GameState::PLAYING) {
+                dangerPulseTimer -= dtReal;
+                if (dangerPulseTimer <= 0.0f) {
+                    dangerPulseTimer = 1.05f;
+                    sound.playDangerHeartbeat();
+                }
+            } else {
+                dangerPulseTimer = 0.0f;
             }
 
             spawner.update(dt, entities);
@@ -551,8 +603,9 @@ int main(int argc, char* argv[]) {
                 if (!isVersus && e.isDropped() && e.getType() != EntityType::EMP_MINE) {
                     scoreSys.registerDropMiss(e.getX(), kHeight - 80.0f);
                     lifeShake = 1.0f;
+                    empFlashTimer = 0.45f;
                     triggerShake(20.0f, 0.25f);
-                    Mix_PlayChannel(-1, sfxExplode, 0);
+                    sound.playDropMiss();
                     touchP1.triggerHaptic(0.8f, 0.5f, 250);
                     touchP1.setLED(239, 68, 68);
                 }
@@ -580,26 +633,33 @@ int main(int argc, char* argv[]) {
 
                         if (res.isMine) {
                             scoreSys.registerMineHit(pIdx, e.getX(), e.getY());
+                            burstCount[pIdx] = 0;
+                            burstAnnounced[pIdx] = 1;
                             lifeShake = 1.0f;
-                            hitStopTimer = 0.055f;
-                            triggerShake(28.0f, 0.32f);
-                            Mix_PlayChannel(-1, sfxExplode, 0);
-                            activeTouch.triggerHaptic(0.9f, 0.9f, 350);
+                            empFlashTimer = 1.0f;
+                            hitStopTimer = 0.06f;
+                            triggerShake(30.0f, 0.34f);
+                            sound.playMineExplosion();
+                            activeTouch.triggerHaptic(0.95f, 0.95f, 360);
                             activeTouch.setLED(239, 68, 68);
                         } else {
                             // ¿Es un power-up especial?
                             bool isPowerup = false;
+                            int powerupKind = 0;
                             if (e.getType() == EntityType::POWERUP_FREEZE) {
-                                freezeTimer = 2.0f;
+                                freezeTimer = 4.2f;
                                 isPowerup = true;
+                                powerupKind = 0;
                             } else if (e.getType() == EntityType::POWERUP_DUAL) {
-                                dualTimer[pIdx] = 6.0f;
+                                dualTimer[pIdx] = 6.5f;
                                 if (pIdx == 0) touchP1.setDualBlade(true);
                                 else touchP2.setDualBlade(true);
                                 isPowerup = true;
+                                powerupKind = 1;
                             } else if (e.getType() == EntityType::POWERUP_FRENZY) {
-                                frenzyTimer[pIdx] = 5.0f;
+                                frenzyTimer[pIdx] = 5.5f;
                                 isPowerup = true;
+                                powerupKind = 2;
                             }
 
                             int finalPts = res.points;
@@ -612,36 +672,52 @@ int main(int argc, char* argv[]) {
                             maxCombo[pIdx] = std::max(maxCombo[pIdx], scoreSys.getCombo(pIdx));
                             scorePop[pIdx] = 1.0f;
 
+                            // Detección de Multi-Slice (cortar 2 o más objetivos en un mismo gesto rápido)
+                            int curSwipe = activeTouch.getSwipeId();
+                            if (curSwipe == burstSwipeId[pIdx] && burstTimer[pIdx] > 0.0f) {
+                                burstCount[pIdx]++;
+                            } else {
+                                burstSwipeId[pIdx] = curSwipe;
+                                burstCount[pIdx] = 1;
+                                burstAnnounced[pIdx] = 1;
+                            }
+                            burstTimer[pIdx] = 0.24f;
+
+                            if (burstCount[pIdx] >= 2 && burstCount[pIdx] > burstAnnounced[pIdx]) {
+                                burstAnnounced[pIdx] = burstCount[pIdx];
+                                scoreSys.addMultiSliceBonus(pIdx, burstCount[pIdx], e.getX(), e.getY());
+                                sound.playMultiSlice(burstCount[pIdx]);
+                                triggerShake(18.0f + burstCount[pIdx] * 3.0f, 0.22f);
+                                hitStopTimer = std::max(hitStopTimer, 0.045f);
+                            }
+
                             if (!isVersus && scoreSys.getScore(0) > bestScore) {
                                 bestScore = scoreSys.getScore(0);
                                 newRecordAchieved = true;
                             }
 
+                            // Audio de impacto por capas: golpe de katana + nota de racha / power-up
+                            sound.playSlice(ratingToAudioCode(res.rating), e.getType() == EntityType::MECHA_SHURIKEN);
+
                             if (isPowerup) {
-                                Mix_PlayChannel(3, sfxPowerup, 0);
-                                activeTouch.triggerHaptic(0.8f, 0.8f, 250);
-                                triggerShake(15.0f, 0.22f);
+                                sound.playPowerup(powerupKind);
+                                activeTouch.triggerHaptic(0.85f, 0.85f, 260);
+                                triggerShake(16.0f, 0.22f);
                             } else {
-                                // Racha Killstreak ascendente estilo Valorant según el combo actual
-                                // Se reproduce en un canal dedicado (1 o 2) para que al cortar varios objetos juntos
-                                // cada nota reemplace limpiamente a la anterior sin saturar ni distorsionar.
                                 int curCombo = scoreSys.getCombo(pIdx);
                                 if (curCombo >= 2) {
-                                    int noteIdx = std::clamp(curCombo - 2, 0, 7);
-                                    Mix_PlayChannel(1 + pIdx, sfxKillstreak[noteIdx], 0);
+                                    sound.playKillstreak(pIdx, curCombo);
                                 }
                             }
 
                             if (isPerf) {
-                                hitStopTimer = 0.04f;
+                                hitStopTimer = std::max(hitStopTimer, 0.04f);
                                 if (freezeTimer <= 0.0f) slowMoTimer = 0.16f;
                                 triggerShake(16.0f, 0.18f);
-                                if (!isPowerup && scoreSys.getCombo(pIdx) < 2) Mix_PlayChannel(-1, sfxPerfect, 0);
                                 activeTouch.triggerHaptic(0.5f, 0.8f, 180);
                                 activeTouch.setLED(34, 197, 94);
                             } else {
                                 triggerShake(9.0f, 0.12f);
-                                if (!isPowerup && scoreSys.getCombo(pIdx) < 2) Mix_PlayChannel(-1, sfxSlice, 0);
                                 activeTouch.triggerHaptic(0.3f, 0.4f, 100);
                                 activeTouch.setLED(250, 204, 21);
                             }
@@ -675,7 +751,7 @@ int main(int argc, char* argv[]) {
                 if (std::fabs(target - displayScoreF[i]) < 1.5f) displayScoreF[i] = target;
             }
 
-            // Reiniciar EXCLUSIVAMENTE con el botón [X] (Cruz / Button A) del mando o botón 0 del arcade stick
+            // Reiniciar con botón [X] (Cruz / Button A), botón 0 del arcade stick o Enter/Espacio
             bool btnDown = false;
             if (touchP1.getController() && SDL_GameControllerGetButton(touchP1.getController(), SDL_CONTROLLER_BUTTON_A)) {
                 btnDown = true;
@@ -686,9 +762,14 @@ int main(int argc, char* argv[]) {
             if (touchP1.getArcadeStick() && SDL_JoystickGetButton(touchP1.getArcadeStick(), 0)) {
                 btnDown = true;
             }
+            const Uint8* keys = SDL_GetKeyboardState(nullptr);
+            if (keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_SPACE]) {
+                btnDown = true;
+            }
 
             if (btnDown && !prevBtnRestart && gameOverAnim > 0.55f) {
-                Mix_PlayChannel(-1, sfxBeep, 0);
+                sound.playUiConfirm();
+                sound.startMenuBgm();
                 state = GameState::MODE_SELECT;
                 menuAnim = 0.0f;
                 entities.clear();
@@ -723,20 +804,22 @@ int main(int argc, char* argv[]) {
                                        [](const SparkParticle& p) { return p.life <= 0.0f; }),
                         particles.end());
 
-        for (auto& r : rings) {
-            r.radius += (r.maxRadius - r.radius) * std::min(1.0f, dtReal * 14.0f);
-            r.life -= dtReal * 3.8f;
-        }
-        rings.erase(std::remove_if(rings.begin(), rings.end(),
-                                   [](const ShockRing& r) { return r.life <= 0.0f; }),
-                    rings.end());
+        if (!isPaused) {
+            for (auto& r : rings) {
+                r.radius += (r.maxRadius - r.radius) * std::min(1.0f, dtReal * 14.0f);
+                r.life -= dtReal * 3.8f;
+            }
+            rings.erase(std::remove_if(rings.begin(), rings.end(),
+                                       [](const ShockRing& r) { return r.life <= 0.0f; }),
+                        rings.end());
 
-        for (auto& f : flashes) {
-            f.life -= dtReal * 5.5f;
+            for (auto& f : flashes) {
+                f.life -= dtReal * 5.5f;
+            }
+            flashes.erase(std::remove_if(flashes.begin(), flashes.end(),
+                                         [](const SlashFlash& f) { return f.life <= 0.0f; }),
+                          flashes.end());
         }
-        flashes.erase(std::remove_if(flashes.begin(), flashes.end(),
-                                     [](const SlashFlash& f) { return f.life <= 0.0f; }),
-                      flashes.end());
 
         // --- RENDERIZADO VISUAL NEOBRUTALISTA ---
         float shakeX = 0.0f, shakeY = 0.0f;
@@ -750,11 +833,12 @@ int main(int argc, char* argv[]) {
         int accentLevel = (maxCurCombo >= 8) ? 2 : ((maxCurCombo >= 4) ? 1 : 0);
         bool inDanger = (state == GameState::PLAYING) &&
                         ((!isVersus && scoreSys.getLives() == 1) || (isVersus && matchTimer <= 10.0f));
+        float activeFrenzy = std::max(frenzyTimer[0], frenzyTimer[1]);
 
         gameRen.beginFrame();
         gameRen.beginWorld();
 
-        gameRen.renderBackground(globalTime, accentLevel, inDanger);
+        gameRen.renderBackground(globalTime, accentLevel, inDanger, freezeTimer > 0.0f, activeFrenzy > 0.0f);
         gameRen.renderRings(rings);
         gameRen.renderEntities(entities, globalTime);
         gameRen.renderHalves(halves);
@@ -772,7 +856,13 @@ int main(int argc, char* argv[]) {
         }
 
         gameRen.renderFloatingScores(scoreSys.getFloatingScores());
+        gameRen.renderMultiSliceBanners(scoreSys.getMultiBanners(), globalTime);
         gameRen.endWorld(shakeX, shakeY);
+
+        // Efectos atmosféricos de pantalla completa (Escarcha, Frenesí, Glitch PEM)
+        if (state == GameState::PLAYING) {
+            gameRen.renderScreenOverlays(globalTime, freezeTimer, activeFrenzy, empFlashTimer);
+        }
 
         // Capas de interfaz (HUD, Menú, Cuenta regresiva, Game Over)
         if (state == GameState::MODE_SELECT) {
@@ -855,18 +945,16 @@ int main(int argc, char* argv[]) {
             gameRen.renderGameOver(gd);
         }
 
+        if (isPaused) {
+            gameRen.renderPauseMenu(pauseSelected, globalTime);
+        }
+
         SDL_RenderPresent(renderer);
     }
 
-    // Limpieza de recursos
-    if (sfxSlice) Mix_FreeChunk(sfxSlice);
-    if (sfxPerfect) Mix_FreeChunk(sfxPerfect);
-    if (sfxExplode) Mix_FreeChunk(sfxExplode);
-    if (sfxBeep) Mix_FreeChunk(sfxBeep);
-    if (sfxGo) Mix_FreeChunk(sfxGo);
-    if (sfxPowerup) Mix_FreeChunk(sfxPowerup);
-    for (int k = 0; k < 8; ++k) {
-        if (sfxKillstreak[k]) Mix_FreeChunk(sfxKillstreak[k]);
+    // Guardar récord final por seguridad al salir
+    if (bestScore > 0) {
+        ScoreSystem::saveBestScore(bestScore);
     }
 
     if (fontGiant) TTF_CloseFont(fontGiant);
@@ -875,7 +963,7 @@ int main(int argc, char* argv[]) {
     if (fontHud) TTF_CloseFont(fontHud);
     if (fontSmall) TTF_CloseFont(fontSmall);
 
-    Mix_CloseAudio();
+    sound.shutdown();
     TTF_Quit();
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

@@ -257,87 +257,54 @@ void ArcheryGame::handleEvents() {
             }
         }
 
-        // Control específico de navegación en el Menú de Ajustes (Paso 3)
+        // Control específico de navegación en el Menú de Pausa (solo CONTINUAR y SALIR DEL JUEGO)
         if (state_ == GameState::PAUSE_MENU) {
             if (ev.type == SDL_KEYDOWN) {
-                if (ev.key.keysym.sym == SDLK_UP) {
-                    pauseMenuIndex_ = (pauseMenuIndex_ + 6) % 7;
-                } else if (ev.key.keysym.sym == SDLK_DOWN) {
-                    pauseMenuIndex_ = (pauseMenuIndex_ + 1) % 7;
-                } else if (ev.key.keysym.sym == SDLK_LEFT || ev.key.keysym.sym == SDLK_RIGHT) {
-                    const float direction = ev.key.keysym.sym == SDLK_RIGHT ? 1.0f : -1.0f;
-                    if (pauseMenuIndex_ == 1) {
-                        config_.sensitivityX = config_.sensitivityY = std::clamp(config_.sensitivityX + direction * 0.1f, 0.5f, 3.0f);
-                        config_.save();
-                    } else if (pauseMenuIndex_ == 2) {
-                        config_.deadzone = std::clamp(config_.deadzone + direction * 0.005f, 0.01f, 0.25f);
-                        config_.save();
-                    }
+                if (ev.key.keysym.sym == SDLK_UP || ev.key.keysym.sym == SDLK_w ||
+                    ev.key.keysym.sym == SDLK_DOWN || ev.key.keysym.sym == SDLK_s) {
+                    pauseMenuIndex_ = (pauseMenuIndex_ + 1) % 2;
                 } else if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_SPACE) {
-                    // Ejecutar opción seleccionada
                     if (pauseMenuIndex_ == 0) {
-                        // Continuar
-                        state_ = GameState::PLAYING;
-                    } else if (pauseMenuIndex_ == 1) {
-                        config_.sensitivityX = config_.sensitivityY = std::min(3.0f, config_.sensitivityX + 0.1f);
-                        config_.save();
-                    } else if (pauseMenuIndex_ == 2) {
-                        config_.deadzone = std::min(0.25f, config_.deadzone + 0.005f);
-                        config_.save();
-                    } else if (pauseMenuIndex_ == 3) {
-                        input_.calibrate();
-                        state_ = GameState::PLAYING;
-                    } else if (pauseMenuIndex_ == 4) {
-                        restartMatch();
-                    } else if (pauseMenuIndex_ == 5) {
-                        // Volver al menú principal
-                        running_ = false;
-                    } else if (pauseMenuIndex_ == 6) {
-                        // Salir
+                        state_ = stateBeforePause_;
+                    } else {
                         running_ = false;
                     }
+                    input_.clearActionFlags();
                 } else if (ev.key.keysym.sym == SDLK_ESCAPE) {
-                    state_ = GameState::PLAYING;
+                    state_ = stateBeforePause_;
+                    input_.clearActionFlags();
                 }
             } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
-                if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP) {
-                    pauseMenuIndex_ = (pauseMenuIndex_ + 6) % 7;
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
-                    pauseMenuIndex_ = (pauseMenuIndex_ + 1) % 7;
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT || ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) {
-                    const float direction = ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT ? 1.0f : -1.0f;
-                    if (pauseMenuIndex_ == 1) {
-                        config_.sensitivityX = config_.sensitivityY = std::clamp(config_.sensitivityX + direction * 0.1f, 0.5f, 3.0f);
-                        config_.save();
-                    } else if (pauseMenuIndex_ == 2) {
-                        config_.deadzone = std::clamp(config_.deadzone + direction * 0.005f, 0.01f, 0.25f);
-                        config_.save();
-                    }
+                if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP ||
+                    ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
+                    pauseMenuIndex_ = (pauseMenuIndex_ + 1) % 2;
                 } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
-                    // X en DualShock (Confirmar)
                     if (pauseMenuIndex_ == 0) {
-                        state_ = GameState::PLAYING;
-                    } else if (pauseMenuIndex_ == 1) {
-                        config_.sensitivityX = config_.sensitivityY = std::min(3.0f, config_.sensitivityX + 0.1f);
-                        config_.save();
-                    } else if (pauseMenuIndex_ == 2) {
-                        config_.deadzone = std::min(0.25f, config_.deadzone + 0.005f);
-                        config_.save();
-                    } else if (pauseMenuIndex_ == 3) {
-                        input_.calibrate();
-                        state_ = GameState::PLAYING;
-                    } else if (pauseMenuIndex_ == 4) {
-                        restartMatch();
-                    } else if (pauseMenuIndex_ == 5) {
-                        running_ = false;
-                    } else if (pauseMenuIndex_ == 6) {
+                        state_ = stateBeforePause_;
+                    } else {
                         running_ = false;
                     }
-                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B || 
-                           ev.cbutton.button == SDL_CONTROLLER_BUTTON_START) {
-                    // Círculo o START: Continuar / Cerrar menú
-                    state_ = GameState::PLAYING;
+                    input_.clearActionFlags();
+                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B ||
+                           ev.cbutton.button == SDL_CONTROLLER_BUTTON_START ||
+                           ev.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
+                    state_ = stateBeforePause_;
+                    input_.clearActionFlags();
                 }
+            }
+        } else {
+            bool openPause = false;
+            if (ev.type == SDL_CONTROLLERBUTTONDOWN &&
+                (ev.cbutton.button == SDL_CONTROLLER_BUTTON_START || ev.cbutton.button == SDL_CONTROLLER_BUTTON_BACK)) {
+                openPause = true;
+            } else if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE) {
+                openPause = true;
+            }
+            if (openPause) {
+                stateBeforePause_ = state_;
+                state_ = GameState::PAUSE_MENU;
+                pauseMenuIndex_ = 0;
+                input_.clearActionFlags();
             }
         }
     }
@@ -1781,8 +1748,8 @@ void ArcheryGame::renderHUD() {
             SDL_RenderDrawRect(ren_, &emptyRound);
         }
     }
-    drawText(fontSmall_, "START / ESC: AJUSTES", 230, 1017, COLOR_TEXT_MUTED, true);
-    drawText(fontSmall_, "C: CENTRAR MIRA", 230, 1038, COLOR_TEXT_MUTED, true);
+    drawText(fontSmall_, "OPTIONS: PAUSA", 230, 1017, COLOR_TEXT_MUTED, true);
+    drawText(fontSmall_, "C / TRIANGULO: CENTRAR MIRA", 230, 1038, COLOR_TEXT_MUTED, true);
 
     // 5. Tarjeta Inferior Derecha: ESTADO DEL ARMA
     const AimState& aim = input_.getState();
@@ -1800,50 +1767,45 @@ void ArcheryGame::renderHUD() {
 void ArcheryGame::renderPauseMenu() {
     // Oscurecimiento de fondo
     SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
-    SDL_SetRenderDrawColor(ren_, 15, 15, 18, 180);
+    SDL_SetRenderDrawColor(ren_, 15, 15, 18, 185);
     SDL_Rect fullScreen = { 0, 0, 1920, 1080 };
     SDL_RenderFillRect(ren_, &fullScreen);
     SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
 
-    int cardW = 740;
-    int cardH = 570;
+    int cardW = 680;
+    int cardH = 380;
     int cardX = 960 - cardW / 2;
     int cardY = 540 - cardH / 2;
 
-    drawBrutalistBox(ren_, cardX, cardY, cardW, cardH, false, COLOR_CARD_BG, COLOR_ACCENT_GOLD, 16);
+    drawBrutalistBox(ren_, cardX, cardY, cardW, cardH, false, COLOR_CARD_BG, COLOR_ACCENT_GOLD, 14);
 
-    drawText(fontLarge_, "MENÚ DE AJUSTES", 960, cardY + 55, COLOR_TEXT_MAIN, true);
-    drawText(fontSmall_, "USA [ARRIBA / ABAJO] Y [X / ENTER]", 960, cardY + 105, COLOR_TEXT_MUTED, true);
+    drawText(fontLarge_, "JUEGO EN PAUSA", 960, cardY + 58, COLOR_TEXT_MAIN, true);
 
-    std::vector<std::string> options = {
+    const char* options[2] = {
         "CONTINUAR",
-        "SENSIBILIDAD: " + std::to_string(static_cast<int>(config_.sensitivityX * 100.0f + 0.5f)) + "%",
-        "ZONA MUERTA: " + std::to_string(static_cast<int>(config_.deadzone * 100.0f + 0.5f)) + "%",
-        "CENTRAR MIRA AQUI",
-        "REINICIAR DESDE RONDA 1",
-        "VOLVER AL MENÚ",
         "SALIR DEL JUEGO"
     };
 
-    int startY = cardY + 140;
-    for (size_t i = 0; i < options.size(); ++i) {
-        bool selected = (static_cast<int>(i) == pauseMenuIndex_);
-        int optY = startY + static_cast<int>(i * 50);
+    int startY = cardY + 150;
+    for (int i = 0; i < 2; ++i) {
+        bool selected = (i == pauseMenuIndex_);
+        int optY = startY + i * 84;
+        int tagW = 540;
+        int tagH = 62;
+        int tagX = 960 - tagW / 2;
 
         if (selected) {
-            // Tarjeta seleccionada con borde grueso y acento dorado
-            int tagW = 660;
-            int tagH = 48;
-            int tagX = 960 - tagW / 2;
-            drawBrutalistBox(ren_, tagX, optY - tagH / 2, tagW, tagH, false, COLOR_CARD_MUTED, COLOR_ACCENT_GOLD, 6);
-            std::string selText = ">  " + options[i] + "  <";
-            drawText(fontMed_, selText, 960, optY, COLOR_TEXT_MAIN, true);
+            SDL_Color accent = (i == 0) ? COLOR_ACCENT_GREEN : COLOR_ACCENT_RED;
+            drawBrutalistBox(ren_, tagX, optY - tagH / 2, tagW, tagH, false, COLOR_CARD_MUTED, accent, 8);
+            std::string selText = ">  " + std::string(options[i]) + "  <";
+            drawText(fontMed_, selText, 960, optY, (i == 1) ? COLOR_ACCENT_RED : COLOR_TEXT_MAIN, true);
         } else {
+            drawBrutalistBox(ren_, tagX, optY - tagH / 2, tagW, tagH, false, COLOR_CARD_BG, {0, 0, 0, 0}, 4);
             drawText(fontMed_, options[i], 960, optY, COLOR_TEXT_MUTED, true);
         }
     }
 
-    drawText(fontSmall_, "IZQ / DER: AJUSTAR    O / ESC: VOLVER", 960, cardY + cardH - 28, COLOR_TEXT_MUTED, true);
+    drawText(fontSmall_, "ARRIBA / ABAJO: ELEGIR   |   X: CONFIRMAR   |   OPTIONS: CONTINUAR", 960, cardY + cardH - 32, COLOR_TEXT_MUTED, true);
 }
 
 void ArcheryGame::renderCalibrationScreen() {

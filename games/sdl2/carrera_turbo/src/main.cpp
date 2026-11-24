@@ -122,6 +122,7 @@ int main(int argc, char** argv) {
     UserInterface ui(renderer, fontTitle, fontHud, fontSmall, config);
 
     GameState state = GameState::CALIBRATION;
+    GameState stateBeforePause = GameState::RACING;
     bool running = true;
 
     float raceTime = 0.0f;
@@ -169,46 +170,53 @@ int main(int argc, char** argv) {
             }
             input1.handleEvent(ev);
 
-            // Manejo de eventos de menú
+            // Manejo de eventos del menú de pausa (solo CONTINUAR y SALIR DEL JUEGO)
             if (state == GameState::PAUSE) {
                 if (ev.type == SDL_KEYDOWN) {
-                    if (ev.key.keysym.sym == SDLK_UP) pauseMenuIndex = (pauseMenuIndex + 5) % 6;
-                    if (ev.key.keysym.sym == SDLK_DOWN) pauseMenuIndex = (pauseMenuIndex + 1) % 6;
-                    if (ev.key.keysym.sym == SDLK_LEFT) {
-                        if (pauseMenuIndex == 0) config.steeringSensitivity = std::max(0.4f, config.steeringSensitivity - 0.1f);
-                        if (pauseMenuIndex == 1) config.deadzone = std::max(0.0f, config.deadzone - 0.01f);
-                        if (pauseMenuIndex == 2) config.steeringSmoothing = std::max(0.0f, config.steeringSmoothing - 0.05f);
-                        if (pauseMenuIndex == 3) config.rumbleEnabled = !config.rumbleEnabled;
-                    }
-                    if (ev.key.keysym.sym == SDLK_RIGHT) {
-                        if (pauseMenuIndex == 0) config.steeringSensitivity = std::min(2.5f, config.steeringSensitivity + 0.1f);
-                        if (pauseMenuIndex == 1) config.deadzone = std::min(0.2f, config.deadzone + 0.01f);
-                        if (pauseMenuIndex == 2) config.steeringSmoothing = std::min(0.9f, config.steeringSmoothing + 0.05f);
-                        if (pauseMenuIndex == 3) config.rumbleEnabled = !config.rumbleEnabled;
-                    }
-                    if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_SPACE) {
-                        if (pauseMenuIndex == 4) state = GameState::RACING;
-                        if (pauseMenuIndex == 5) running = false;
+                    if (ev.key.keysym.sym == SDLK_UP || ev.key.keysym.sym == SDLK_w) {
+                        pauseMenuIndex = (pauseMenuIndex + 1) % 2;
+                        sound.playShiftAlert();
+                    } else if (ev.key.keysym.sym == SDLK_DOWN || ev.key.keysym.sym == SDLK_s) {
+                        pauseMenuIndex = (pauseMenuIndex + 1) % 2;
+                        sound.playShiftAlert();
+                    } else if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_SPACE) {
+                        if (pauseMenuIndex == 0) state = stateBeforePause;
+                        else running = false;
+                        input1.clearMenuFlags();
+                    } else if (ev.key.keysym.sym == SDLK_ESCAPE) {
+                        state = stateBeforePause;
+                        input1.clearMenuFlags();
                     }
                 } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
-                    if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP) pauseMenuIndex = (pauseMenuIndex + 5) % 6;
-                    if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) pauseMenuIndex = (pauseMenuIndex + 1) % 6;
-                    if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT) {
-                        if (pauseMenuIndex == 0) config.steeringSensitivity = std::max(0.4f, config.steeringSensitivity - 0.1f);
-                        if (pauseMenuIndex == 1) config.deadzone = std::max(0.0f, config.deadzone - 0.01f);
-                        if (pauseMenuIndex == 2) config.steeringSmoothing = std::max(0.0f, config.steeringSmoothing - 0.05f);
-                        if (pauseMenuIndex == 3) config.rumbleEnabled = !config.rumbleEnabled;
+                    if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP ||
+                        ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
+                        pauseMenuIndex = (pauseMenuIndex + 1) % 2;
+                        sound.playShiftAlert();
+                    } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
+                        if (pauseMenuIndex == 0) state = stateBeforePause;
+                        else running = false;
+                        input1.clearMenuFlags();
+                    } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B ||
+                               ev.cbutton.button == SDL_CONTROLLER_BUTTON_START) {
+                        state = stateBeforePause;
+                        input1.clearMenuFlags();
                     }
-                    if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) {
-                        if (pauseMenuIndex == 0) config.steeringSensitivity = std::min(2.5f, config.steeringSensitivity + 0.1f);
-                        if (pauseMenuIndex == 1) config.deadzone = std::min(0.2f, config.deadzone + 0.01f);
-                        if (pauseMenuIndex == 2) config.steeringSmoothing = std::min(0.9f, config.steeringSmoothing + 0.05f);
-                        if (pauseMenuIndex == 3) config.rumbleEnabled = !config.rumbleEnabled;
-                    }
-                    if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
-                        if (pauseMenuIndex == 4) state = GameState::RACING;
-                        if (pauseMenuIndex == 5) running = false;
-                    }
+                }
+            } else {
+                // En cualquier estado fuera de pausa, OPTIONS (START) o ESC abre el menú de pausa
+                bool openPause = false;
+                if (ev.type == SDL_CONTROLLERBUTTONDOWN && ev.cbutton.button == SDL_CONTROLLER_BUTTON_START) {
+                    openPause = true;
+                } else if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE) {
+                    openPause = true;
+                }
+                if (openPause) {
+                    stateBeforePause = state;
+                    state = GameState::PAUSE;
+                    pauseMenuIndex = 0;
+                    sound.playScreech(false);
+                    input1.setRumble(0.0f, 0.0f, 0, true);
+                    input1.clearMenuFlags();
                 }
             }
         }
@@ -593,9 +601,6 @@ int main(int argc, char** argv) {
 
             case GameState::PAUSE:
                 sound.playScreech(false);
-                if (in1.cancel) {
-                    state = GameState::RACING;
-                }
                 break;
         }
 

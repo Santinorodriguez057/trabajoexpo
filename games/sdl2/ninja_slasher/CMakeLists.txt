@@ -9,6 +9,7 @@ add_executable(ninja_slasher
     src/spawner.cpp
     src/score.cpp
     src/renderer.cpp
+    src/sound.cpp
 )
 
 set(NINJA_LIBS)

@@ -11,9 +11,9 @@ Cada juego es un **ejecutable independiente** (C++/SDL2 o build de Unity) que el
 ```mermaid
 flowchart LR
     M[Menú SDL2/C++<br/>Soporte mando PS4] -->|lanza proceso| G1[Duelo de Vaqueros<br/>SDL2 / 1v1]
-    M -->|lanza proceso| G2[Tiro con Arco<br/>SDL2 / Giroscopio]
+    M -->|lanza proceso| G2[Tiro al Blanco<br/>SDL2 / Giroscopio]
     M -->|lanza proceso| G3[Carrera Turbo<br/>SDL2 / Volante]
-    M -->|lanza proceso| G4[Test de Mando<br/>SDL2 / Diagnóstico]
+    M -->|lanza proceso| G4[Ninja Slasher<br/>SDL2 / Touchpad]
     G1 -->|al salir| M
     G2 -->|al salir| M
     G3 -->|al salir| M
@@ -41,7 +41,7 @@ flowchart LR
 │   │   ├── duelo_vaqueros/     # Duelo Western 1v1 con reflejos y bullet-time
 │   │   ├── tiro_con_arco/      # Tiro al blanco de feria con apuntado por giroscopio
 │   │   ├── carrera_turbo/      # Conducción en 1ª persona con volante DualShock
-│   │   ├── test_mando/         # Herramienta de diagnóstico de ejes, giroscopio y vibración
+│   │   ├── ninja_slasher/      # Cortes cibernéticos con el touchpad del DualShock
 │   │   └── template_game/      # Plantilla base para añadir nuevos juegos
 │   └── unity/                  # Espacio para proyectos Unity exportados
 ├── scripts/
@@ -143,20 +143,7 @@ Duelo rápido de reflejos estilo Western para 2 jugadores con mandos PS4 o contr
 
 ---
 
-### 3. Test de Mando
-Herramienta de diagnóstico visual para verificar el estado de los controles antes de jugar.
-* Lectura en tiempo real de todos los ejes analógicos (palancas y gatillos progresivos L2/R2).
-* Telemetría de sensores de movimiento: valores crudos de **Giroscopio (X, Y, Z)** y **Acelerómetro (X, Y, Z)**.
-* Prueba de motores de vibración háptica (Rumble bajo y alto) y verificación de conectividad HIDAPI.
-
-| Acción | Mando DualShock 4 | Teclado |
-|---|---|---|
-| **Probar Vibración** | Botón **Triángulo [△]** | Tecla **Espacio** |
-| **Salir al Menú** | Botón **Círculo [O]** | Tecla **ESC** |
-
----
-
-### 4. Carrera Turbo (Conducción Neobrutalista en Primera Persona)
+### 3. Carrera Turbo (Conducción Neobrutalista en Primera Persona)
 Juego de carreras arcade en primera persona con tecnología pseudo-3D rasterizada por segmentos estilo *OutRun*, con estética visual **Neobrutalista** idéntica a *Duelo de Vaqueros* (bloques de color saturados, bordes negros gruesos y sombras duras sin degradado).
 
 * **Volante Físico por Giroscopio**: Sostén el DualShock 4 con ambas manos frente a ti e inclínalo hacia los lados para girar como un volante de carreras real (estilo *Gran Turismo* con Sixaxis).

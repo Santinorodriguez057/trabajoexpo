@@ -56,6 +56,8 @@ void TouchInput::handleEvent(const SDL_Event& ev, int screenW, int screenH) {
     if (ev.type == SDL_CONTROLLERTOUCHPADDOWN) {
         if (ev.ctouchpad.which == myId && ev.ctouchpad.touchpad == 0 && ev.ctouchpad.finger == 0) {
             fingerDown_ = true;
+            ++swipeId_;
+            whooshCooldown_ = 0.0f;
             currentX_ = ev.ctouchpad.x * screenW;
             currentY_ = ev.ctouchpad.y * screenH;
             prevX_ = currentX_;
@@ -69,6 +71,8 @@ void TouchInput::handleEvent(const SDL_Event& ev, int screenW, int screenH) {
         if (ev.ctouchpad.which == myId && ev.ctouchpad.touchpad == 0 && ev.ctouchpad.finger == 0) {
             if (!fingerDown_) {
                 fingerDown_ = true;
+                ++swipeId_;
+                whooshCooldown_ = 0.0f;
                 prevX_ = ev.ctouchpad.x * screenW;
                 prevY_ = ev.ctouchpad.y * screenH;
             }
@@ -83,10 +87,22 @@ void TouchInput::handleEvent(const SDL_Event& ev, int screenW, int screenH) {
             fingerDown_ = false;
         }
     }
+    (void)ev;
+}
+
+bool TouchInput::consumeWhooshPulse() {
+    if (whooshTriggered_) {
+        whooshTriggered_ = false;
+        return true;
+    }
+    return false;
 }
 
 void TouchInput::update(float dt, int screenW, int screenH) {
     activeSlashes_.clear();
+    if (whooshCooldown_ > 0.0f) {
+        whooshCooldown_ = std::max(0.0f, whooshCooldown_ - dt);
+    }
 
     // 1. Polling directo como respaldo de la API de SDL si el event loop no reporta ráfagas completas
     if (controller_) {
@@ -100,6 +116,8 @@ void TouchInput::update(float dt, int screenW, int screenH) {
 
                 if (!fingerDown_) {
                     fingerDown_ = true;
+                    ++swipeId_;
+                    whooshCooldown_ = 0.0f;
                     prevX_ = sx;
                     prevY_ = sy;
                     currentX_ = sx;
@@ -159,6 +177,10 @@ void TouchInput::update(float dt, int screenW, int screenH) {
             arcadeCursorX_ = std::clamp(arcadeCursorX_ + dirX * moveSpeed * dt, 40.0f, static_cast<float>(screenW - 40));
             arcadeCursorY_ = std::clamp(arcadeCursorY_ + dirY * moveSpeed * dt, 40.0f, static_cast<float>(screenH - 40));
 
+            if (!fingerDown_) {
+                ++swipeId_;
+                whooshCooldown_ = 0.0f;
+            }
             currentX_ = arcadeCursorX_;
             currentY_ = arcadeCursorY_;
             fingerDown_ = true;
@@ -191,7 +213,7 @@ void TouchInput::update(float dt, int screenW, int screenH) {
         float dx = pNew.x - pOld.x;
         float dy = pNew.y - pOld.y;
         float dist = std::hypot(dx, dy);
-        float timeDiff = std::max(0.001f, pNew.time - pOld.time);
+        float timeDiff = std::max(0.001f, pOld.time - pNew.time);
 
         // Umbral de corte mínimo: distancia >= 24px y velocidad rápida
         if (dist >= 24.0f) {
@@ -199,6 +221,11 @@ void TouchInput::update(float dt, int screenW, int screenH) {
             float angle = std::atan2(dy, dx);
             float thick = dualBlade_ ? 42.0f : 14.0f;
             activeSlashes_.push_back({pOld.x, pOld.y, pNew.x, pNew.y, angle, speed, playerIndex_, thick});
+
+            if (dist >= 115.0f && speed >= 1350.0f && whooshCooldown_ <= 0.0f) {
+                whooshTriggered_ = true;
+                whooshCooldown_ = 0.20f;
+            }
         }
     }
 

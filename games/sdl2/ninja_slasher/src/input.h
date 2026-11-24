@@ -53,6 +53,9 @@ public:
     void setDualBlade(bool active) { dualBlade_ = active; }
     bool isDualBlade() const { return dualBlade_; }
 
+    int getSwipeId() const { return swipeId_; }
+    bool consumeWhooshPulse();
+
     bool isConnected() const { return controller_ != nullptr || arcadeStick_ != nullptr; }
 
     void triggerHaptic(float low, float high, Uint32 ms);
@@ -71,6 +74,9 @@ private:
 
     bool fingerDown_ = false;
     bool dualBlade_ = false;
+    int swipeId_ = 0;
+    bool whooshTriggered_ = false;
+    float whooshCooldown_ = 0.0f;
     float currentX_ = 0.0f;
     float currentY_ = 0.0f;
     float prevX_ = 0.0f;

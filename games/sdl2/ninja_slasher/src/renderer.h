@@ -107,7 +107,7 @@ public:
     void fillScreen(SDL_Color c);
 
     // Mundo
-    void renderBackground(float time, int accentLevel, bool danger);
+    void renderBackground(float time, int accentLevel, bool danger, bool frozen = false, bool frenzy = false);
     void renderEntities(const std::vector<CyberEntity>& entities, float time);
     void renderHalves(const std::vector<CutHalf>& halves);
     void renderParticles(const std::vector<SparkParticle>& particles);
@@ -117,6 +117,8 @@ public:
                       bool fingerDown, float fx, float fy, float time = 0.0f,
                       bool isFrenzy = false, bool isDual = false);
     void renderFloatingScores(const std::vector<FloatingScore>& scores);
+    void renderMultiSliceBanners(const std::vector<MultiSliceBanner>& banners, float time);
+    void renderScreenOverlays(float time, float freezeTimer, float frenzyTimer, float empFlash);
 
     // Pantallas / HUD (sin sacudida)
     void renderHudSolo(const HudSoloData& d);
@@ -124,6 +126,7 @@ public:
     void renderMenu(const MenuData& d);
     void renderCountdown(int number, float beatT);
     void renderGameOver(const GameOverData& d);
+    void renderPauseMenu(int selectedIndex, float time);
 
     // Primitivas neobrutalistas
     void drawNeobrutalRect(int x, int y, int w, int h, SDL_Color fill, int borderW = 4, int shadowOffset = 6);
@@ -157,6 +160,7 @@ private:
     void drawTitleBounce(const std::string& text, float cx, float cy, float time, float anim);
     void drawPadlock(int cx, int cy);
     void drawTugBar(int x, int y, int w, int h, int s1, int s2);
+    void drawPowerupBadge(float cx, float cy, int kind, const std::string& text, float scale, float angleDeg);
 
     SDL_Renderer* ren_ = nullptr;
     TTF_Font* fontGiant_ = nullptr;

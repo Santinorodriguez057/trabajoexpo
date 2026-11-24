@@ -316,25 +316,31 @@ void GameRenderer::drawStamp(TTF_Font* font, const std::string& text, float cx, 
 // ===========================================================================
 // Fondo dinámico
 // ===========================================================================
-void GameRenderer::renderBackground(float time, int accentLevel, bool danger) {
-    SDL_SetRenderDrawColor(ren_, CyberTheme::cDarkBg.r, CyberTheme::cDarkBg.g, CyberTheme::cDarkBg.b, 255);
+void GameRenderer::renderBackground(float time, int accentLevel, bool danger, bool frozen, bool frenzy) {
+    SDL_Color baseBg = CyberTheme::cDarkBg;
+    if (frozen) baseBg = {12, 26, 42, 255};
+    else if (frenzy) baseBg = {32, 16, 18, 255};
+    SDL_SetRenderDrawColor(ren_, baseBg.r, baseBg.g, baseBg.b, 255);
     SDL_RenderClear(ren_);
 
     // 1. Tipografía gigante de fondo desplazándose (marca visual del juego)
     SDL_Color bgText = {26, 30, 46, 255};
-    if (accentLevel == 1) bgText = {44, 40, 22, 255};
+    if (frozen) bgText = {24, 48, 72, 255};
+    else if (frenzy) bgText = {64, 28, 18, 255};
+    else if (accentLevel == 1) bgText = {44, 40, 22, 255};
     else if (accentLevel >= 2) bgText = {54, 24, 42, 255};
-    if (danger && blink(time, 4.0f)) bgText = {58, 22, 26, 255};
+    if (danger && blink(time, 4.0f)) bgText = {64, 22, 26, 255};
 
     const TextTex* big = getText(fontGiant_, "NINJA SLASHER ");
     if (big) {
         SDL_SetTextureColorMod(big->tex, bgText.r, bgText.g, bgText.b);
-        float off1 = std::fmod(time * 70.0f, static_cast<float>(big->w));
+        float speedMul = frozen ? 0.35f : (frenzy ? 1.65f : 1.0f);
+        float off1 = std::fmod(time * 70.0f * speedMul, static_cast<float>(big->w));
         for (float x = -off1; x < kW; x += big->w) {
             SDL_Rect d = {static_cast<int>(x), 120, big->w, big->h};
             SDL_RenderCopy(ren_, big->tex, nullptr, &d);
         }
-        float off2 = std::fmod(time * 50.0f, static_cast<float>(big->w));
+        float off2 = std::fmod(time * 50.0f * speedMul, static_cast<float>(big->w));
         for (float x = off2 - big->w; x < kW; x += big->w) {
             SDL_Rect d = {static_cast<int>(x), 600, big->w, big->h};
             SDL_RenderCopy(ren_, big->tex, nullptr, &d);
@@ -342,20 +348,23 @@ void GameRenderer::renderBackground(float time, int accentLevel, bool danger) {
     }
 
     // 2. Cuadrícula cibernética que sube (sensación de movimiento constante)
-    SDL_SetRenderDrawColor(ren_, CyberTheme::cGridLine.r, CyberTheme::cGridLine.g, CyberTheme::cGridLine.b, 255);
+    SDL_Color gridCol = CyberTheme::cGridLine;
+    if (frozen) gridCol = {28, 56, 84, 255};
+    else if (frenzy) gridCol = {62, 32, 24, 255};
+    SDL_SetRenderDrawColor(ren_, gridCol.r, gridCol.g, gridCol.b, 255);
     const int step = 80;
     for (int x = 0; x < kW; x += step) {
         SDL_Rect r = {x, 0, 2, kH};
         SDL_RenderFillRect(ren_, &r);
     }
-    float gOff = std::fmod(time * 35.0f, static_cast<float>(step));
+    float gOff = std::fmod(time * (frozen ? 14.0f : (frenzy ? 65.0f : 35.0f)), static_cast<float>(step));
     for (float y = kH - gOff; y > -step; y -= step) {
         SDL_Rect r = {0, static_cast<int>(y), kW, 2};
         SDL_RenderFillRect(ren_, &r);
     }
 
-    // 3. Figuras geométricas flotantes (parallax)
-    SDL_Color deco = {40, 46, 70, 255};
+    // 3. Figuras geométricas flotantes (parallax) + líneas de velocidad si hay Frenesí
+    SDL_Color deco = frozen ? SDL_Color{45, 95, 135, 255} : (frenzy ? SDL_Color{95, 48, 25, 255} : SDL_Color{40, 46, 70, 255});
     for (int i = 0; i < 10; ++i) {
         float size = 26.0f + (i % 3) * 18.0f;
         float px = std::fmod(i * 211.0f + 90.0f, static_cast<float>(kW)) + std::sin(time * 0.4f + i) * 40.0f;
@@ -374,10 +383,30 @@ void GameRenderer::renderBackground(float time, int accentLevel, bool danger) {
         }
     }
 
-    // 4. Bandas de peligro superior e inferior (rojas y parpadeantes en zona crítica)
+    if (frenzy) {
+        // Líneas de energía ascendentes estilo anime/cyber-frenzy
+        for (int s = 0; s < 14; ++s) {
+            float sx = 80.0f + std::fmod(s * 139.0f, static_cast<float>(kW - 160));
+            float sy = kH - std::fmod(time * (950.0f + s * 60.0f) + s * 190.0f, static_cast<float>(kH + 200));
+            renderThickLine(sx, sy, sx, sy + 95.0f, 4.0f, {120, 52, 18, 255});
+        }
+    } else if (frozen) {
+        // Cristales hexagonales flotando suavemente en cámara lenta
+        for (int s = 0; s < 8; ++s) {
+            float sx = 140.0f + std::fmod(s * 235.0f, static_cast<float>(kW - 280));
+            float sy = 140.0f + std::fmod(s * 173.0f + time * 18.0f, static_cast<float>(kH - 280));
+            float cr = 14.0f + (s % 3) * 5.0f;
+            renderThickLine(sx - cr, sy, sx + cr, sy, 3.0f, {56, 130, 178, 255});
+            renderThickLine(sx, sy - cr, sx, sy + cr, 3.0f, {56, 130, 178, 255});
+        }
+    }
+
+    // 4. Bandas de peligro superior e inferior (cambian según estado activo)
     SDL_Color bandA = CyberTheme::cYellow;
     SDL_Color bandB = CyberTheme::cBlack;
     if (danger) bandA = blink(time, 5.0f) ? CyberTheme::cRed : CyberTheme::cYellow;
+    else if (frozen) bandA = CyberTheme::cIceCyan;
+    else if (frenzy) bandA = CyberTheme::cNeonFlame;
     drawHazardBand(0, 0, kW, 22, time * 90.0f, bandA, bandB);
     drawHazardBand(0, kH - 22, kW, 22, -time * 90.0f, bandA, bandB);
 }
@@ -639,10 +668,124 @@ void GameRenderer::renderFloatingScores(const std::vector<FloatingScore>& scores
         float age = 1.0f - fs.life;
         float scale = (age < 0.12f) ? (1.55f - (age / 0.12f) * 0.55f) : 1.0f;
         if (fs.life < 0.25f) scale *= std::max(0.0f, fs.life / 0.25f);
+        scale *= fs.scaleMul;
         float ang = ((static_cast<int>(fs.x) / 7) % 2 == 0) ? -5.0f : 5.0f;
         SDL_Color fill = {static_cast<Uint8>(fs.r), static_cast<Uint8>(fs.g), static_cast<Uint8>(fs.b), 255};
         drawStamp(fontHud_, fs.text, fs.x, fs.y, scale * 0.85f, ang, fill, CyberTheme::cBlack);
     }
+}
+
+void GameRenderer::renderMultiSliceBanners(const std::vector<MultiSliceBanner>& banners, float time) {
+    const SDL_Color& K = CyberTheme::cBlack;
+    for (const auto& mb : banners) {
+        float age = 1.0f - mb.life;
+        float pop = easeOutBack(clamp01(age / 0.16f));
+        if (mb.life < 0.22f) pop *= clamp01(mb.life / 0.22f);
+        if (pop <= 0.02f) continue;
+
+        SDL_Color pCol = (mb.playerIndex == 0) ? CyberTheme::cP1Cyan : CyberTheme::cP2Pink;
+        SDL_Color badgeCol = (mb.count >= 4) ? CyberTheme::cP2Pink : ((mb.count == 3) ? CyberTheme::cNeonFlame : CyberTheme::cYellow);
+        float tilt = ((mb.playerIndex == 0) ? -6.0f : 6.0f) + std::sin(time * 18.0f) * 1.8f;
+
+        std::string title = "¡TAJO MÚLTIPLE x" + std::to_string(mb.count) + "!";
+        std::string sub   = "BONUS +" + std::to_string(mb.bonus);
+
+        // Marco doble neobrutalista de alto impacto
+        drawStampBox(mb.x, mb.y, 440.0f * pop, 98.0f * pop, tilt, badgeCol, 5, 10);
+        drawTextScaled(fontHud_, title, mb.x, mb.y - 16.0f * pop, K, 1.02f * pop, tilt, 0);
+        drawStamp(fontSmall_, sub, mb.x, mb.y + 28.0f * pop, 0.95f * pop, tilt, pCol, K);
+    }
+}
+
+void GameRenderer::renderScreenOverlays(float time, float freezeTimer, float frenzyTimer, float empFlash) {
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+
+    // 1. Esquinas cristalinas de escarcha durante CONGELACIÓN
+    if (freezeTimer > 0.0f) {
+        float intensity = clamp01(freezeTimer * 1.4f);
+        Uint8 alpha = static_cast<Uint8>(75.0f * intensity);
+        SDL_SetRenderDrawColor(ren_, 56, 189, 248, alpha);
+        SDL_Rect leftB = {0, 22, 18, kH - 44};
+        SDL_Rect rightB = {kW - 18, 22, 18, kH - 44};
+        SDL_RenderFillRect(ren_, &leftB);
+        SDL_RenderFillRect(ren_, &rightB);
+
+        // Puntas geométricas de hielo en las 4 esquinas
+        SDL_Color iceEdge = {125, 211, 252, static_cast<Uint8>(165 * intensity)};
+        float len = 150.0f * intensity;
+        fillTriangle(0, 22, len, 22, 0, 22 + len, iceEdge);
+        fillTriangle(kW, 22, kW - len, 22, kW, 22 + len, iceEdge);
+        fillTriangle(0, kH - 22, len, kH - 22, 0, kH - 22 - len, iceEdge);
+        fillTriangle(kW, kH - 22, kW - len, kH - 22, kW, kH - 22 - len, iceEdge);
+    }
+
+    // 2. Pulso cálido en los bordes laterales durante FRENESÍ X2
+    if (frenzyTimer > 0.0f) {
+        float pulse = 0.65f + 0.35f * std::sin(time * 16.0f);
+        float intensity = clamp01(frenzyTimer * 1.2f) * pulse;
+        SDL_Color fireEdge = {255, 94, 0, static_cast<Uint8>(135 * intensity)};
+        float len = 135.0f;
+        fillTriangle(0, 22, len, 22, 0, 22 + len, fireEdge);
+        fillTriangle(kW, 22, kW - len, 22, kW, 22 + len, fireEdge);
+        fillTriangle(0, kH - 22, len, kH - 22, 0, kH - 22 - len, fireEdge);
+        fillTriangle(kW, kH - 22, kW - len, kH - 22, kW, kH - 22 - len, fireEdge);
+    }
+
+    // 3. Interferencia cromática / Flash rojo breve al explotar una Mina PEM o perder vida
+    if (empFlash > 0.0f) {
+        Uint8 a = static_cast<Uint8>(std::clamp(empFlash * 150.0f, 0.0f, 150.0f));
+        SDL_SetRenderDrawColor(ren_, 239, 68, 68, a);
+        SDL_Rect full = {0, 0, kW, kH};
+        SDL_RenderFillRect(ren_, &full);
+
+        // Franjas horizontales de glitch PEM
+        SDL_SetRenderDrawColor(ren_, 250, 204, 21, a);
+        for (int g = 0; g < 4; ++g) {
+            int gy = static_cast<int>(std::fmod(time * 1400.0f + g * 270.0f, static_cast<float>(kH - 30)));
+            SDL_Rect glitchBar = {0, gy, kW, 8};
+            SDL_RenderFillRect(ren_, &glitchBar);
+        }
+    }
+
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
+}
+
+void GameRenderer::drawPowerupBadge(float cx, float cy, int kind, const std::string& text, float scale, float angleDeg) {
+    const SDL_Color& K = CyberTheme::cBlack;
+    SDL_Color fill = (kind == 0) ? CyberTheme::cIceCyan : ((kind == 1) ? CyberTheme::cYellow : CyberTheme::cNeonFlame);
+    const TextTex* t = getText(fontSmall_, text);
+    if (!t || scale <= 0.01f) return;
+
+    float iconSpace = 34.0f;
+    float w = (t->w + 38.0f + iconSpace) * scale;
+    float h = (t->h + 14.0f) * scale;
+    drawStampBox(cx, cy, w, h, angleDeg, fill, 4, 6);
+
+    // Ícono vectorial nítido a la izquierda (sin depender de fuentes de emojis del sistema)
+    float rad = angleDeg * kPi / 180.0f;
+    float leftOffset = -w * 0.5f + 24.0f * scale;
+    float ix = cx + std::cos(rad) * leftOffset;
+    float iy = cy + std::sin(rad) * leftOffset;
+    float ir = 9.0f * scale;
+
+    if (kind == 0) {
+        // Copo / asterisco criogénico vectorial
+        renderThickLine(ix - ir, iy, ix + ir, iy, 3.5f, K);
+        renderThickLine(ix, iy - ir, ix, iy + ir, 3.5f, K);
+        renderThickLine(ix - ir * 0.7f, iy - ir * 0.7f, ix + ir * 0.7f, iy + ir * 0.7f, 2.5f, K);
+        renderThickLine(ix + ir * 0.7f, iy - ir * 0.7f, ix - ir * 0.7f, iy + ir * 0.7f, 2.5f, K);
+    } else if (kind == 1) {
+        // Dos katanas cruzadas vectoriales
+        renderThickLine(ix - ir, iy - ir, ix + ir, iy + ir, 4.0f, K);
+        renderThickLine(ix + ir, iy - ir, ix - ir, iy + ir, 4.0f, K);
+    } else {
+        // Diamante doble de sobrecarga / llama
+        drawQuad(ix, iy, ir * 1.9f, ir * 1.9f, angleDeg + 45.0f, K);
+        drawQuad(ix, iy, ir * 1.0f, ir * 1.0f, angleDeg + 45.0f, CyberTheme::cYellow);
+    }
+
+    float txtOffset = iconSpace * 0.42f * scale;
+    drawTextScaled(fontSmall_, text, cx + std::cos(rad) * txtOffset, cy + std::sin(rad) * txtOffset, K, scale, angleDeg, 0);
 }
 
 // ===========================================================================
@@ -690,25 +833,22 @@ void GameRenderer::renderHudSolo(const HudSoloData& d) {
         drawNeobrutalRect(kW - 360, 392, static_cast<int>(280 * clamp01(d.comboFrac)), 22, tc, 0, 0);
     }
 
-    // Indicadores activos de Power-ups (Sellos flotantes de estado)
-    float badgeY = 175.0f;
+    // Indicadores activos de Power-ups (Sellos flotantes con íconos vectoriales limpios)
+    float badgeY = 178.0f;
     if (d.freezeTimer > 0.0f) {
-        float fP = 1.0f + 0.08f * std::sin(d.time * 12.0f);
-        drawStamp(fontSmall_, "❄ CONGELAR: " + std::to_string(static_cast<int>(std::ceil(d.freezeTimer))) + "s",
-                  180.0f, badgeY, fP, -3.0f, CyberTheme::cIceCyan, K);
-        badgeY += 46.0f;
+        float fP = 1.0f + 0.06f * std::sin(d.time * 12.0f);
+        drawPowerupBadge(205.0f, badgeY, 0, "CONGELAR: " + std::to_string(static_cast<int>(std::ceil(d.freezeTimer))) + "s", fP, -2.5f);
+        badgeY += 50.0f;
     }
     if (d.dualTimer > 0.0f) {
-        float dP = 1.0f + 0.08f * std::sin(d.time * 12.0f);
-        drawStamp(fontSmall_, "⚔ FILO DOBLE: " + std::to_string(static_cast<int>(std::ceil(d.dualTimer))) + "s",
-                  180.0f, badgeY, dP, 3.0f, CyberTheme::cYellow, K);
-        badgeY += 46.0f;
+        float dP = 1.0f + 0.06f * std::sin(d.time * 12.0f);
+        drawPowerupBadge(205.0f, badgeY, 1, "FILO DOBLE: " + std::to_string(static_cast<int>(std::ceil(d.dualTimer))) + "s", dP, 2.5f);
+        badgeY += 50.0f;
     }
     if (d.frenzyTimer > 0.0f) {
-        float rP = 1.0f + 0.08f * std::sin(d.time * 12.0f);
-        drawStamp(fontSmall_, "🔥 FRENESÍ X2: " + std::to_string(static_cast<int>(std::ceil(d.frenzyTimer))) + "s",
-                  180.0f, badgeY, rP, -2.0f, CyberTheme::cNeonFlame, K);
-        badgeY += 46.0f;
+        float rP = 1.0f + 0.06f * std::sin(d.time * 12.0f);
+        drawPowerupBadge(205.0f, badgeY, 2, "FRENESÍ X2: " + std::to_string(static_cast<int>(std::ceil(d.frenzyTimer))) + "s", rP, -2.0f);
+        badgeY += 50.0f;
     }
 }
 
@@ -742,15 +882,15 @@ void GameRenderer::renderHud1v1(const Hud1v1Data& d) {
                       comboTierColor(d.combo[p]), K);
         }
 
-        // Badges de powerup activo para cada jugador
-        float py = 265.0f;
+        // Badges de powerup activo para cada jugador (íconos vectoriales)
+        float py = 268.0f;
         if (d.dualTimer[p] > 0.0f) {
-            drawStamp(fontSmall_, "⚔ FILO DOBLE", bx[p] + 210.0f, py, 1.0f, 0.0f, CyberTheme::cYellow, K);
-            py += 38.0f;
+            drawPowerupBadge(bx[p] + 210.0f, py, 1, "FILO DOBLE " + std::to_string(static_cast<int>(std::ceil(d.dualTimer[p]))) + "s", 0.95f, 0.0f);
+            py += 44.0f;
         }
         if (d.frenzyTimer[p] > 0.0f) {
-            drawStamp(fontSmall_, "🔥 FRENESÍ X2", bx[p] + 210.0f, py, 1.0f, 0.0f, CyberTheme::cNeonFlame, K);
-            py += 38.0f;
+            drawPowerupBadge(bx[p] + 210.0f, py, 2, "FRENESÍ X2 " + std::to_string(static_cast<int>(std::ceil(d.frenzyTimer[p]))) + "s", 0.95f, 0.0f);
+            py += 44.0f;
         }
     }
 
@@ -769,8 +909,8 @@ void GameRenderer::renderHud1v1(const Hud1v1Data& d) {
 
     // Estado global de congelación si está activo en 1v1
     if (d.freezeTimer > 0.0f) {
-        float fP = 1.0f + 0.08f * std::sin(d.time * 12.0f);
-        drawStamp(fontSmall_, "❄ TIEMPO RALENTIZADO ❄", 960.0f, 215.0f, fP, 0.0f, CyberTheme::cIceCyan, K);
+        float fP = 1.0f + 0.06f * std::sin(d.time * 12.0f);
+        drawPowerupBadge(960.0f, 222.0f, 0, "TIEMPO RALENTIZADO " + std::to_string(static_cast<int>(std::ceil(d.freezeTimer))) + "s", fP, 0.0f);
     }
 }
 
@@ -865,25 +1005,32 @@ void GameRenderer::renderMenu(const MenuData& d) {
         drawText(fontSmall_, hint, 960, 638, CyberTheme::cWhite, true, true);
     }
 
-    // Tarjetas de tutorial: enseñan los 4 objetos de un vistazo
+    // Tarjetas de tutorial: enseñan los 5 elementos clave de un vistazo (incluyendo Power-ups)
     struct Card { EntityType type; const char* name; const char* desc; SDL_Color fill; };
-    const Card cards[4] = {
+    const Card cards[5] = {
         {EntityType::ENERGY_CORE,    "NÚCLEO",   "CORTALO",          CyberTheme::cWhite},
         {EntityType::CYBER_DRONE,    "DRON",     "SEGUÍ LA LÍNEA",   CyberTheme::cWhite},
         {EntityType::MECHA_SHURIKEN, "SHURIKEN", "BONUS DORADO",     CyberTheme::cWhite},
+        {EntityType::POWERUP_DUAL,   "CÁPSULAS", "HIELO · 2X · FILO",CyberTheme::cIceCyan},
         {EntityType::EMP_MINE,       "MINA PEM", "¡NO LA TOQUES!",   CyberTheme::cRed}};
-    for (int i = 0; i < 4; ++i) {
-        float appear = easeOutBack(clamp01(d.anim * 1.8f - 0.7f - i * 0.08f));
+    for (int i = 0; i < 5; ++i) {
+        float appear = easeOutBack(clamp01(d.anim * 1.8f - 0.7f - i * 0.07f));
         if (appear <= 0.0f) continue;
-        int cw = 370, ch = 124;
-        int cx = static_cast<int>(960 + (i - 1.5f) * 405) - cw / 2;
+        int cw = 326, ch = 122;
+        int cx = static_cast<int>(960 + (i - 2.0f) * 348) - cw / 2;
         int cy = 700 + static_cast<int>((1.0f - appear) * 400.0f);
+        EntityType shownType = cards[i].type;
+        if (i == 3) {
+            int cycle = (static_cast<int>(d.time * 0.85f)) % 3;
+            shownType = (cycle == 0) ? EntityType::POWERUP_FREEZE
+                      : ((cycle == 1) ? EntityType::POWERUP_DUAL : EntityType::POWERUP_FRENZY);
+        }
         drawNeobrutalRect(cx, cy, cw, ch, cards[i].fill, 4, 7);
         float iconAng = d.time * 0.8f;
-        float iconR = (cards[i].type == EntityType::CYBER_DRONE) ? 28.0f : 32.0f;
-        drawEntity(cards[i].type, cx + 74.0f, cy + ch * 0.5f, iconR, iconAng, 0.6f, d.time);
-        drawText(fontHud_, cards[i].name, cx + 146, cy + 26, K, false, false);
-        drawText(fontSmall_, cards[i].desc, cx + 146, cy + 72, K, false, false);
+        float iconR = (shownType == EntityType::CYBER_DRONE) ? 26.0f : 29.0f;
+        drawEntity(shownType, cx + 62.0f, cy + ch * 0.5f, iconR, iconAng, 0.6f, d.time);
+        drawText(fontHud_, cards[i].name, cx + 124, cy + 24, K, false, false);
+        drawText(fontSmall_, cards[i].desc, cx + 124, cy + 72, K, false, false);
     }
 
     // Estado de mandos + récord
@@ -992,4 +1139,41 @@ void GameRenderer::renderGameOver(const GameOverData& d) {
     if (d.anim > 1.2f && blink(d.time, 2.0f)) {
         drawStamp(fontHud_, "PRESIONÁ [X] PARA VOLVER A JUGAR", 960.0f, top + ph + 70.0f, 1.0f, 0.0f, CyberTheme::cWhite, K);
     }
+}
+
+void GameRenderer::renderPauseMenu(int selectedIndex, float time) {
+    const SDL_Color& K = CyberTheme::cBlack;
+
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(ren_, 10, 12, 18, 195);
+    SDL_Rect full = {0, 0, kW, kH};
+    SDL_RenderFillRect(ren_, &full);
+    SDL_SetRenderDrawBlendMode(ren_, SDL_BLENDMODE_NONE);
+
+    int pw = 680, ph = 390;
+    int px = 960 - pw / 2;
+    int py = 540 - ph / 2;
+
+    drawNeobrutalRect(px, py, pw, ph, CyberTheme::cWhite, 7, 14);
+    drawStampBox(960.0f, static_cast<float>(py + 8), 520.0f, 76.0f, -2.5f, CyberTheme::cYellow, 5, 8);
+    drawTextScaled(fontTitle_, "JUEGO EN PAUSA", 960.0f, static_cast<float>(py + 8), K, 0.92f, -2.5f, 0);
+
+    const char* opts[2] = {"CONTINUAR", "SALIR DEL JUEGO"};
+    const SDL_Color cols[2] = {CyberTheme::cGreen, CyberTheme::cRed};
+
+    for (int i = 0; i < 2; ++i) {
+        bool sel = (i == selectedIndex);
+        int bw = pw - 140;
+        int bh = 74;
+        int bx = 960 - bw / 2;
+        int by = py + 106 + i * 98 - (sel ? 4 : 0);
+
+        drawNeobrutalRect(bx, by, bw, bh, sel ? cols[i] : CyberTheme::cSilver, sel ? 6 : 4, sel ? 10 : 5);
+        float scale = sel ? (1.02f + 0.03f * std::sin(time * 8.0f)) : 0.92f;
+        SDL_Color txtCol = (sel && i == 1) ? CyberTheme::cWhite : K;
+        std::string label = sel ? (std::string("►  ") + opts[i] + "  ◄") : std::string(opts[i]);
+        drawTextScaled(fontHud_, label, 960.0f, by + bh * 0.5f, txtCol, scale, 0.0f, 0);
+    }
+
+    drawText(fontSmall_, "D-PAD: ELEGIR   ·   [X]: CONFIRMAR   ·   [OPTIONS]: CONTINUAR", 960, py + ph - 44, K, true, false);
 }

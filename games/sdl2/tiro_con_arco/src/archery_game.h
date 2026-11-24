@@ -123,6 +123,7 @@ private:
     SoundManager audio_;
 
     GameState state_ = GameState::CALIBRATION;
+    GameState stateBeforePause_ = GameState::PLAYING;
     bool running_ = true;
 
     // Configuración de partida

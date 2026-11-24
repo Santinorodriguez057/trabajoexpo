@@ -1022,16 +1022,80 @@ int main(int argc, char** argv) {
     }
 
     bool running = true;
+    bool isPaused = false;
+    int pauseSelected = 0; // 0 = Continuar, 1 = Salir del juego
+    Uint32 pauseStartTicks = 0;
+
+    auto enterPause = [&]() {
+        if (isPaused) return;
+        isPaused = true;
+        pauseSelected = 0;
+        pauseStartTicks = SDL_GetTicks();
+        Mix_Pause(-1);
+        if (p1.gc) SDL_GameControllerRumble(p1.gc, 0, 0, 0);
+        if (p2.gc) SDL_GameControllerRumble(p2.gc, 0, 0, 0);
+    };
+
+    auto exitPause = [&]() {
+        if (!isPaused) return;
+        Uint32 delta = SDL_GetTicks() - pauseStartTicks;
+        tension_start_time += delta;
+        draw_start_time += delta;
+        hit_time += delta;
+        last_heartbeat_time += delta;
+        last_tick_time += delta;
+        isPaused = false;
+        Mix_Resume(-1);
+    };
+
     while (running) {
         Uint32 frameStart = SDL_GetTicks();
+        Uint32 activeTicks = isPaused ? pauseStartTicks : frameStart;
 
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_QUIT) {
                 running = false;
+            } else if (ev.type == SDL_CONTROLLERDEVICEADDED) {
+                assignController(ev.cdevice.which);
+            } else if (ev.type == SDL_CONTROLLERDEVICEREMOVED) {
+                SDL_JoystickID jid = ev.cdevice.which;
+                if (p1.gc && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(p1.gc)) == jid) {
+                    SDL_GameControllerClose(p1.gc);
+                    p1.gc = nullptr;
+                    p1.ready = false;
+                } else if (p2.gc && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(p2.gc)) == jid) {
+                    SDL_GameControllerClose(p2.gc);
+                    p2.gc = nullptr;
+                    p2.ready = false;
+                }
+            } else if (isPaused) {
+                if (ev.type == SDL_KEYDOWN) {
+                    if (ev.key.keysym.sym == SDLK_UP || ev.key.keysym.sym == SDLK_w ||
+                        ev.key.keysym.sym == SDLK_DOWN || ev.key.keysym.sym == SDLK_s) {
+                        pauseSelected = (pauseSelected + 1) % 2;
+                    } else if (ev.key.keysym.sym == SDLK_RETURN || ev.key.keysym.sym == SDLK_SPACE) {
+                        if (pauseSelected == 0) exitPause();
+                        else running = false;
+                    } else if (ev.key.keysym.sym == SDLK_ESCAPE) {
+                        exitPause();
+                    }
+                } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
+                    if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_UP ||
+                        ev.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
+                        pauseSelected = (pauseSelected + 1) % 2;
+                    } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
+                        if (pauseSelected == 0) exitPause();
+                        else running = false;
+                    } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B ||
+                               ev.cbutton.button == SDL_CONTROLLER_BUTTON_START ||
+                               ev.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
+                        exitPause();
+                    }
+                }
             } else if (ev.type == SDL_KEYDOWN) {
                 if (ev.key.keysym.sym == SDLK_ESCAPE) {
-                    running = false;
+                    enterPause();
                 } else if (ev.key.keysym.sym == SDLK_SPACE || ev.key.keysym.sym == SDLK_RETURN) {
                     if (state == STATE_WAITING) {
                         p1.ready = true;
@@ -1049,25 +1113,14 @@ int main(int argc, char** argv) {
                         setControllerLED(p2.gc, 80, 180, 255);
                     }
                 }
-            } else if (ev.type == SDL_CONTROLLERDEVICEADDED) {
-                assignController(ev.cdevice.which);
-            } else if (ev.type == SDL_CONTROLLERDEVICEREMOVED) {
-                SDL_JoystickID jid = ev.cdevice.which;
-                if (p1.gc && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(p1.gc)) == jid) {
-                    SDL_GameControllerClose(p1.gc);
-                    p1.gc = nullptr;
-                    p1.ready = false;
-                } else if (p2.gc && SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(p2.gc)) == jid) {
-                    SDL_GameControllerClose(p2.gc);
-                    p2.gc = nullptr;
-                    p2.ready = false;
-                }
             } else if (ev.type == SDL_CONTROLLERBUTTONDOWN) {
-                if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B) {
+                if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_START || ev.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
+                    enterPause();
+                } else if (ev.cbutton.button == SDL_CONTROLLER_BUTTON_B && state == STATE_RESULT) {
                     running = false;
                 }
                 
-                if (state == STATE_WAITING && ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
+                if (!isPaused && state == STATE_WAITING && ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
                     SDL_JoystickID id = ev.cbutton.which;
                     SDL_JoystickID id1 = p1.gc ? SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(p1.gc)) : -1;
                     SDL_JoystickID id2 = p2.gc ? SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(p2.gc)) : -1;
@@ -1084,7 +1137,7 @@ int main(int argc, char** argv) {
                     }
                 }
                 
-                if (state == STATE_RESULT && ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
+                if (!isPaused && state == STATE_RESULT && ev.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
                     state = STATE_WAITING;
                     p1.ready = p2.ready = p1.foul = p2.foul = false;
                     winner = 0;
@@ -1123,22 +1176,25 @@ int main(int argc, char** argv) {
             return SDL_GameControllerGetAxis(p.gc, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 10000;
         };
 
-        readSensors(p1);
-        readSensors(p2);
-
         // Feedback de resistencia mecánica previa al disparar (sensación de amartillado)
         auto handleTriggerResistance = [&](Player& p) {
             if (!p.gc) return;
             Sint16 triggerVal = SDL_GameControllerGetAxis(p.gc, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
             if (triggerVal > 4000 && triggerVal < 9000) {
-                // Micro-resistencia / click antes del punto de quiebre
                 SDL_GameControllerRumble(p.gc, 0x1800, 0x0000, 25);
             }
         };
-        handleTriggerResistance(p1);
-        handleTriggerResistance(p2);
 
-        if (state == STATE_WAITING) {
+        if (!isPaused) {
+            readSensors(p1);
+            readSensors(p2);
+            handleTriggerResistance(p1);
+            handleTriggerResistance(p2);
+        }
+
+        if (isPaused) {
+            // El duelo queda congelado (no cuenta faltas ni corren los timers) mientras esté abierto el menú de pausa
+        } else if (state == STATE_WAITING) {
             p1.has_drawn = false;
             p2.has_drawn = false;
             
@@ -1276,11 +1332,11 @@ int main(int argc, char** argv) {
         }
 
         // --- RENDERIZADO NEO-BRUTALISTA ---
-        float currTime = SDL_GetTicks() * 0.001f;
+        float currTime = activeTicks * 0.001f;
         
         float tension_prog = 0.0f;
         if (state == STATE_TENSION || state == STATE_DRAW) {
-            float elapsed = (float)(state == STATE_TENSION ? (SDL_GetTicks() - tension_start_time) : tension_duration);
+            float elapsed = (float)(state == STATE_TENSION ? (activeTicks - tension_start_time) : tension_duration);
             tension_prog = (-cos(elapsed * 0.0025f) + 1.0f) * 0.5f; 
             tension_prog = tension_prog * tension_prog;
         } else if (state == STATE_SHOWDOWN) {
@@ -1305,7 +1361,7 @@ int main(int argc, char** argv) {
             phaseP1 = p1.has_drawn ? 2 : 1; 
             phaseP2 = p2.has_drawn ? 2 : 1;
         } else if (state == STATE_SHOWDOWN) {
-            Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
+            Uint32 elapsedShowdown = activeTicks - hit_time;
             if (elapsedShowdown < 1950) {
                 // Durante el vuelo balístico en cámara lenta: ganador firme disparando, rival paralizado
                 phaseP1 = (winner == 1) ? 2 : 1;
@@ -1326,7 +1382,7 @@ int main(int argc, char** argv) {
         }
 
         // Determinar si se dibuja el sombrero en el suelo (se oculta mientras vuela en el aire durante el impacto)
-        Uint32 elShowdownNow = (state == STATE_SHOWDOWN) ? (SDL_GetTicks() - hit_time) : 0;
+        Uint32 elShowdownNow = (state == STATE_SHOWDOWN) ? (activeTicks - hit_time) : 0;
         bool showP1GroundHat = !(winner == 2 && state == STATE_SHOWDOWN && elShowdownNow < 2400);
         bool showP2GroundHat = !(winner == 1 && state == STATE_SHOWDOWN && elShowdownNow < 2400);
 
@@ -1338,7 +1394,7 @@ int main(int argc, char** argv) {
         // SECUENCIA CINEMÁTICA: BULLET-TIME ÉPICO Y ESPECTACULAR
         // =========================================================================
         if (state == STATE_SHOWDOWN && bullet_winner > 0) {
-            Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
+            Uint32 elapsedShowdown = activeTicks - hit_time;
             int dir = (bullet_winner == 1) ? 1 : -1;
             // Boca del cañón calculada exactamente según la geometría del revólver en pantalla
             float startX = (bullet_winner == 1) ? 755.0f : 1165.0f;
@@ -1671,7 +1727,7 @@ int main(int argc, char** argv) {
             float traumaShakeY = 0.0f;
 
             if (state == STATE_SHOWDOWN && bullet_winner > 0) {
-                Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
+                Uint32 elapsedShowdown = activeTicks - hit_time;
                 int dir = (bullet_winner == 1) ? 1 : -1;
 
                 if (elapsedShowdown < 100) {
@@ -1724,7 +1780,7 @@ int main(int argc, char** argv) {
             if (state == STATE_TENSION || state == STATE_DRAW || state == STATE_SHOWDOWN) {
                 int barHeight = (int)(95.0f * tension_prog);
                 if (state == STATE_SHOWDOWN) {
-                    Uint32 el = SDL_GetTicks() - hit_time;
+                    Uint32 el = activeTicks - hit_time;
                     float expandT = std::min(1.0f, (float)el / 350.0f);
                     barHeight = (int)(95.0f + 40.0f * expandT); // Se expande a 135px para ratio 2.40:1 Cinemascope puro
                 }
@@ -1738,7 +1794,7 @@ int main(int argc, char** argv) {
 
         // FASE 1 DEL CLÍMAX: HIT-STOP CON INVERSIÓN DE COLOR NEGRO Y RELÁMPAGO (Primeros 100ms)
         if (state == STATE_SHOWDOWN) {
-            Uint32 elapsedShowdown = SDL_GetTicks() - hit_time;
+            Uint32 elapsedShowdown = activeTicks - hit_time;
             if (elapsedShowdown < 100) {
                 SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
                 // Oscurecimiento de alto contraste instantáneo
@@ -1766,7 +1822,7 @@ int main(int argc, char** argv) {
         // INTERFAZ DE RESULTADO DINÁMICA, MODERNA Y ELEGANTE (Renderizada en pantalla limpia sin zoom)
         if (state == STATE_RESULT) {
             // Entrada suave y limpia desde arriba (después de 2500ms de clímax cinematográfico)
-            Uint32 resElapsed = SDL_GetTicks() - (hit_time + 2500);
+            Uint32 resElapsed = activeTicks - (hit_time + 2500);
             float animProg = std::min(1.0f, (float)resElapsed / 350.0f);
             float smoothT = animProg * (2.0f - animProg); // Ease-out cuadrático
             int bannerY = (int)(25.0f - (1.0f - smoothT) * 40.0f);
@@ -1835,7 +1891,64 @@ int main(int argc, char** argv) {
             }
 
             // Pie con instrucciones limpias
-            renderText(ren, font, "[X] o [P] Revancha   •   [O] o [ESC] Salir", 960, bannerY + 158, {90, 90, 90, 255}, true, 0.26f);
+            renderText(ren, font, "[X] Revancha   •   [OPTIONS] Pausa / Salir", 960, bannerY + 158, {90, 90, 90, 255}, true, 0.26f);
+        }
+
+        // MENÚ DE PAUSA NEO-BRUTALISTA (Solo CONTINUAR y SALIR DEL JUEGO)
+        if (isPaused) {
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(ren, 12, 12, 15, 190);
+            SDL_Rect fullOverlay = {0, 0, 1920, 1080};
+            SDL_RenderFillRect(ren, &fullOverlay);
+            SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_NONE);
+
+            int cardW = 680;
+            int cardH = 380;
+            int cardX = 960 - cardW / 2;
+            int cardY = 540 - cardH / 2;
+
+            drawBrutalistBox(cardX, cardY, cardW, cardH, false);
+
+            // Franja superior dorada western
+            SDL_SetRenderDrawColor(ren, 220, 165, 25, 255);
+            SDL_Rect headerStripe = {cardX + 6, cardY + 6, cardW - 12, 12};
+            SDL_RenderFillRect(ren, &headerStripe);
+
+            renderText(ren, font, "JUEGO EN PAUSA", 960, cardY + 62, {15, 15, 15, 255}, true, 0.48f);
+
+            const char* opts[2] = {"CONTINUAR", "SALIR DEL JUEGO"};
+            for (int i = 0; i < 2; ++i) {
+                bool sel = (i == pauseSelected);
+                int btnW = 520;
+                int btnH = 66;
+                int btnX = 960 - btnW / 2;
+                int btnY = cardY + 132 + i * 88;
+
+                SDL_SetRenderDrawColor(ren, 10, 10, 10, 255);
+                SDL_Rect sh = {btnX + (sel ? 8 : 4), btnY + (sel ? 8 : 4), btnW, btnH};
+                SDL_RenderFillRect(ren, &sh);
+
+                if (sel) {
+                    SDL_Color bg = (i == 0) ? SDL_Color{35, 175, 70, 255} : SDL_Color{210, 45, 45, 255};
+                    SDL_SetRenderDrawColor(ren, bg.r, bg.g, bg.b, 255);
+                } else {
+                    SDL_SetRenderDrawColor(ren, 238, 238, 240, 255);
+                }
+                SDL_Rect box = {btnX, btnY, btnW, btnH};
+                SDL_RenderFillRect(ren, &box);
+
+                SDL_SetRenderDrawColor(ren, 10, 10, 10, 255);
+                for (int b = 0; b < 4; ++b) {
+                    SDL_Rect bor = {btnX + b, btnY + b, btnW - b * 2, btnH - b * 2};
+                    SDL_RenderDrawRect(ren, &bor);
+                }
+
+                std::string label = sel ? (std::string(">  ") + opts[i] + "  <") : std::string(opts[i]);
+                SDL_Color txtCol = (sel && i == 1) ? SDL_Color{255, 255, 255, 255} : (sel ? SDL_Color{10, 10, 10, 255} : SDL_Color{90, 90, 95, 255});
+                renderText(ren, font, label, 960, btnY + btnH / 2, txtCol, true, 0.34f);
+            }
+
+            renderText(ren, font, "[D-PAD]: Elegir   •   [X]: Confirmar   •   [OPTIONS]: Continuar", 960, cardY + cardH - 32, {90, 90, 95, 255}, true, 0.22f);
         }
 
         SDL_RenderPresent(ren);

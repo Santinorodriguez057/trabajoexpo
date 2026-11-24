@@ -14,3 +14,7 @@ windows_deps/
 # Editor / SO
 .DS_Store
 Thumbs.db
+
+# Datos locales de récords / ajustes
+*.dat
+tiro_con_arco.cfg

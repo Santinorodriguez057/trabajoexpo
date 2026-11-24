@@ -540,8 +540,8 @@ void UserInterface::renderTimeAttackHud(const Car& car, const Road& road, int cu
     } else if (maxAheadCurve > 3.2f) {
         safeSpeed = 195.0f; // Curvones veloces
         suggestedGear = 4;
+        
     }
-
     // Si el auto va más rápido de lo seguro para la curva que se avecina, activar cartel HUD deportivo
     if (car.getSpeed() > safeSpeed + 12.0f && maxAheadCurve >= 4.0f) {
         int warnW = 580;
@@ -834,33 +834,49 @@ void UserInterface::renderFinish(float totalTime, float topSpeed, int checkpoint
 }
 
 void UserInterface::renderPause(int selectedIndex) {
-    int modalW = 860;
-    int modalH = 580;
+    SDL_Renderer* sdlRen = renderer_.getRenderer();
+    SDL_SetRenderDrawBlendMode(sdlRen, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(sdlRen, 12, 14, 20, 175);
+    SDL_Rect overlay = {0, 0, 1920, 1080};
+    SDL_RenderFillRect(sdlRen, &overlay);
+    SDL_SetRenderDrawBlendMode(sdlRen, SDL_BLENDMODE_NONE);
+
+    int modalW = 680;
+    int modalH = 380;
     int modalX = 960 - modalW / 2;
     int modalY = 540 - modalH / 2;
 
-    renderer_.drawNeobrutalRect(modalX, modalY, modalW, modalH, {255, 255, 255, 255}, 6, 10);
+    renderer_.drawNeobrutalRect(modalX, modalY, modalW, modalH, {255, 255, 255, 255}, 6, 12);
 
-    renderer_.drawNeobrutalRect(modalX + 40, modalY - 25, modalW - 80, 70, {56, 189, 248, 255}, 5, 8);
-    renderer_.drawText(fontTitle_, "PAUSA Y AJUSTES", 960, modalY - 18, {18, 18, 18, 255}, true);
+    renderer_.drawNeobrutalRect(modalX + 50, modalY - 28, modalW - 100, 68, {56, 189, 248, 255}, 5, 8);
+    renderer_.drawText(fontTitle_, "JUEGO EN PAUSA", 960, modalY - 20, {18, 18, 18, 255}, true);
 
-    std::vector<std::string> opts = {
-        "Sensibilidad Volante: " + std::to_string(config_.steeringSensitivity).substr(0, 4),
-        "Zona Muerta: " + std::to_string(config_.deadzone).substr(0, 4),
-        "Suavizado Volante: " + std::to_string(config_.steeringSmoothing).substr(0, 4),
-        std::string("Vibración Háptica: ") + (config_.rumbleEnabled ? "ACTIVADA" : "DESACTIVADA"),
-        "► REANUDAR CARRERA ◄",
-        "SALIR AL MENÚ PRINCIPAL"
+    const char* opts[2] = {
+        "CONTINUAR",
+        "SALIR DEL JUEGO"
+    };
+    SDL_Color activeColors[2] = {
+        {34, 197, 94, 255},  // Verde para Continuar
+        {239, 68, 68, 255}   // Rojo para Salir
     };
 
-    int startY = modalY + 100;
-    for (size_t i = 0; i < opts.size(); ++i) {
-        bool sel = (static_cast<int>(i) == selectedIndex);
+    int startY = modalY + 105;
+    for (int i = 0; i < 2; ++i) {
+        bool sel = (i == selectedIndex);
+        int btnW = modalW - 140;
+        int btnH = 68;
+        int btnX = 960 - btnW / 2;
+        int btnY = startY + i * 92;
+
         if (sel) {
-            renderer_.drawNeobrutalRect(modalX + 60, startY + static_cast<int>(i * 65) - 8, modalW - 120, 52, {250, 204, 21, 255}, 3, 4);
-            renderer_.drawText(fontHud_, opts[i], 960, startY + static_cast<int>(i * 65), {18, 18, 18, 255}, true);
+            renderer_.drawNeobrutalRect(btnX, btnY, btnW, btnH, activeColors[i], 4, 7);
+            SDL_Color txtCol = (i == 1) ? SDL_Color{255, 255, 255, 255} : SDL_Color{18, 18, 18, 255};
+            renderer_.drawText(fontHud_, std::string("►  ") + opts[i] + "  ◄", 960, btnY + 17, txtCol, true);
         } else {
-            renderer_.drawText(fontHud_, opts[i], 960, startY + static_cast<int>(i * 65), {75, 85, 99, 255}, true);
+            renderer_.drawNeobrutalRect(btnX, btnY, btnW, btnH, {241, 245, 249, 255}, 3, 4);
+            renderer_.drawText(fontHud_, opts[i], 960, btnY + 17, {75, 85, 99, 255}, true);
         }
     }
+
+    renderer_.drawText(fontSmall_, "[D-PAD]: Elegir   •   [X]: Confirmar   •   [OPTIONS]: Continuar", 960, modalY + modalH - 46, {100, 116, 139, 255}, true);
 }

@@ -54,9 +54,9 @@ echo     build\bin\menu.exe
 echo.
 echo   O ejecuta individualmente:
 echo     build\bin\duelo_vaqueros.exe
-echo     build\bin\test_mando.exe
 echo     build\bin\tiro_con_arco.exe
 echo     build\bin\carrera_turbo.exe
+echo     build\bin\ninja_slasher.exe
 echo ========================================================
 echo.
 pause
